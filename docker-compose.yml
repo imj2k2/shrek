@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  backend:
+    build: .
+    command: uvicorn ui.app:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_API_SECRET=${ALPACA_API_SECRET}
+      - ROBINHOOD_USERNAME=${ROBINHOOD_USERNAME}
+      - ROBINHOOD_PASSWORD=${ROBINHOOD_PASSWORD}
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+    depends_on:
+      - redis
+  gradio:
+    build: .
+    command: python -m ui.gradio_ui
+    ports:
+      - "7860:7860"
+    depends_on:
+      - backend
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
