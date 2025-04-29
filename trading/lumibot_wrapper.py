@@ -130,6 +130,10 @@ class LumibotBroker:
                 # )
                 # return {'status': 'submitted', 'order_id': result.id}
                 pass
+            except Exception as e:
+                error_msg = f"Error placing order: {e}"
+                self.logger.error(error_msg)
+                return {'status': 'error', 'message': error_msg}
         
         # For paper trading, update the mock portfolio
         symbol = signal['symbol']
@@ -274,6 +278,8 @@ class LumibotBroker:
                 # In production, this would fetch from the actual broker
                 # return self.connection.get_portfolio()
                 pass
+            except Exception as e:
+                self.logger.error(f"Error fetching portfolio: {e}")
         
         # For paper trading or fallback, return the mock portfolio
         return self._mock_portfolio

@@ -16,11 +16,8 @@ app.add_middleware(
 
 app.include_router(agent_router)
 
-@app.on_event("startup")
-def startup_event():
-    # Launch Gradio UI in a separate thread
-    import threading
-    threading.Thread(target=launch_gradio, daemon=True).start()
+# We don't need to launch Gradio from here anymore
+# The Gradio UI is now launched independently in its own container
 
 @app.get("/ping")
 def ping():

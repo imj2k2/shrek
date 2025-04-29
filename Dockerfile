@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.9
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -22,6 +22,9 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Set matplotlib to use Agg backend (non-GUI)
+ENV MPLBACKEND=Agg
+
 # Copy project
 COPY . .
 
@@ -32,4 +35,4 @@ RUN mkdir -p /app/data /app/backtest_results
 EXPOSE 8000 7860
 
 # Default command
-CMD ["uvicorn", "ui.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "ui.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,11 +1,38 @@
-fastapi
-uvicorn
-gradio
-discord.py
-requests
-pandas
-numpy
-scipy
-redis
-pydantic
-plotly
+# API and Web Framework
+fastapi==0.95.0
+uvicorn==0.22.0
+pydantic==1.10.7
+
+# UI
+gradio==3.32.0
+plotly==5.14.1
+matplotlib==3.7.1
+pillow==9.5.0
+
+# Data Processing
+pandas==2.0.0
+numpy==1.24.3
+scipy==1.10.1
+
+# Storage
+redis==4.5.4
+
+# Networking
+requests==2.28.2
+discord.py==2.2.3
+
+# Trading
+lumibot==2.5.0
+alpaca-trade-api==2.3.0
+polygon-api-client==1.12.3
+yfinance==0.2.10
+
+# Visualization
+seaborn==0.12.2
+
+# Testing
+pytest==7.3.1
+
+# Utilities
+python-dotenv==1.0.0
+tqdm==4.65.0

@@ -1,9 +1,21 @@
 from typing import Dict, List, Any, Optional
 import logging
 from datetime import datetime
-from discord_bot.bot import notify_risk_alert
 import asyncio
 import threading
+import os
+
+# Try to import Discord notification, but provide fallback if not available
+try:
+    from discord_bot.bot import notify_risk_alert
+    DISCORD_AVAILABLE = True
+except (ImportError, ValueError):
+    DISCORD_AVAILABLE = False
+    
+    # Dummy function when Discord is not available
+    async def notify_risk_alert(message, alert_type="unknown"):
+        logging.info(f"[DISCORD DISABLED] Risk alert ({alert_type}): {message}")
+        return True
 
 class AdvancedRiskManager:
     """Advanced risk management with trailing stops, drawdown limits, and position sizing"""
@@ -274,6 +286,11 @@ class AdvancedRiskManager:
         if not alerts:
             return
         
+        # Skip if Discord notifications are disabled or unavailable
+        if not self.notify_discord or not DISCORD_AVAILABLE:
+            self.logger.info(f"Discord alerts disabled or unavailable. Skipping {len(alerts)} alerts.")
+            return
+        
         # Format alerts for Discord
         for alert in alerts:
             alert_type = alert.get('type', 'unknown')
@@ -284,6 +301,11 @@ class AdvancedRiskManager:
     
     def _send_discord_message(self, message: str, alert_type: str):
         """Send message to Discord using asyncio"""
+        # Skip if Discord is not available
+        if not DISCORD_AVAILABLE:
+            self.logger.info(f"Discord not available. Would have sent alert: {alert_type} - {message}")
+            return
+            
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -326,7 +348,7 @@ class AdvancedRiskManager:
             self.halt_timestamp = None
             self.logger.info("Trading halt manually reset")
             
-            if self.notify_discord:
+            if self.notify_discord and DISCORD_AVAILABLE:
                 threading.Thread(
                     target=self._send_discord_message,
                     args=("✅ **TRADING HALT LIFTED** ✅\nTrading has been manually re-enabled.", "halt_reset")

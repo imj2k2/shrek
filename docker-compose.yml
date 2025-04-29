@@ -1,96 +1,38 @@
-version: '3.8'
+version: '3'
 services:
   backend:
     build: .
-    command: uvicorn ui.app:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - POLYGON_API_KEY=${POLYGON_API_KEY}
-      - ALPACA_API_KEY=${ALPACA_API_KEY}
-      - ALPACA_API_SECRET=${ALPACA_API_SECRET}
-      - ROBINHOOD_USERNAME=${ROBINHOOD_USERNAME}
-      - ROBINHOOD_PASSWORD=${ROBINHOOD_PASSWORD}
-      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - POLYGON_API_KEY=${POLYGON_API_KEY:-demo}
+      - ALPACA_API_KEY=${ALPACA_API_KEY:-demo}
+      - ALPACA_API_SECRET=${ALPACA_API_SECRET:-demo}
       - BROKER_TYPE=${BROKER_TYPE:-mock}
-    volumes:
-      - .:/app
     depends_on:
       - redis
-    networks:
-      - trading-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    restart: on-failure
 
   gradio:
     build: .
     command: python -m ui.gradio_ui
     ports:
       - "7860:7860"
-    volumes:
-      - .:/app
     environment:
       - API_BASE_URL=http://backend:8000
     depends_on:
       - backend
-    networks:
-      - trading-network
-    restart: unless-stopped
+    restart: on-failure
 
   redis:
-    image: redis:7-alpine
+    image: redis:alpine
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes
-    networks:
-      - trading-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  discord-bot:
-    build: .
-    command: python -m discord_bot.bot
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DISCORD_TOKEN=${DISCORD_TOKEN}
-      - API_BASE_URL=http://backend:8000
-    volumes:
-      - .:/app
-    depends_on:
-      - backend
-      - redis
-    networks:
-      - trading-network
-    restart: unless-stopped
-
-  backtest-service:
-    build: .
-    command: python -m backtest.run_backtest --agent stocks --symbols AAPL,MSFT,GOOGL --start-date 2023-01-01 --end-date 2023-12-31 --output-dir /app/backtest_results
-    volumes:
-      - .:/app
-      - backtest-results:/app/backtest_results
-    environment:
-      - POLYGON_API_KEY=${POLYGON_API_KEY}
-    networks:
-      - trading-network
-    profiles:
-      - backtest
+    restart: on-failure
 
 volumes:
   redis-data:
-  backtest-results:
-
-networks:
-  trading-network:

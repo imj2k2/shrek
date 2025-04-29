@@ -2,17 +2,16 @@
 # run_docker.sh - Script to run the trading platform in Docker
 
 # Set default environment variables if not already set
-export POLYGON_API_KEY=${POLYGON_API_KEY:-"demo_key"}
-export ALPACA_API_KEY=${ALPACA_API_KEY:-"demo_key"}
-export ALPACA_API_SECRET=${ALPACA_API_SECRET:-"demo_secret"}
-export DISCORD_TOKEN=${DISCORD_TOKEN:-""}
+export POLYGON_API_KEY=${POLYGON_API_KEY:-"demo"}
+export ALPACA_API_KEY=${ALPACA_API_KEY:-"demo"}
+export ALPACA_API_SECRET=${ALPACA_API_SECRET:-"demo"}
+export DISCORD_TOKEN=${DISCORD_TOKEN:-"demo"}
 export BROKER_TYPE=${BROKER_TYPE:-"mock"}
 
 # Display banner
 echo "====================================================="
 echo "  AI-driven Multi-Agent Trading Platform"
 echo "====================================================="
-echo "Starting services with Docker Compose..."
 
 # Check if Docker is running
 if ! docker info > /dev/null 2>&1; then
@@ -24,11 +23,20 @@ fi
 # Parse command line arguments
 COMMAND="up -d"
 SERVICES=""
+PROFILES=""
+USE_DISCORD=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --build)
       COMMAND="up -d --build"
+      shift
+      ;;
+    --rebuild)
+      echo "Rebuilding all containers..."
+      docker-compose down
+      docker-compose build --no-cache
+      COMMAND="up -d"
       shift
       ;;
     --down)
@@ -39,8 +47,12 @@ while [[ $# -gt 0 ]]; do
       COMMAND="logs -f"
       shift
       ;;
+    --discord)
+      USE_DISCORD=true
+      shift
+      ;;
     --backtest)
-      SERVICES="backtest-service"
+      PROFILES="--profile backtest"
       shift
       ;;
     --help)
@@ -48,9 +60,11 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "Options:"
       echo "  --build      Rebuild containers before starting"
+      echo "  --rebuild    Force complete rebuild of all containers"
       echo "  --down       Stop and remove containers"
       echo "  --logs       Show logs for all services"
-      echo "  --backtest   Run the backtesting service only"
+      echo "  --discord    Enable Discord bot (requires DISCORD_TOKEN)"
+      echo "  --backtest   Run the backtesting service"
       echo "  --help       Show this help message"
       echo ""
       echo "Environment variables:"
@@ -69,15 +83,26 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Add Discord profile if requested
+if [ "$USE_DISCORD" = true ]; then
+  if [ "$DISCORD_TOKEN" = "demo" ]; then
+    echo "Error: DISCORD_TOKEN must be set to use Discord bot."
+    echo "Please set the DISCORD_TOKEN environment variable and try again."
+    exit 1
+  fi
+  PROFILES="$PROFILES --profile discord"
+  echo "Discord bot enabled."
+fi
+
 # Run Docker Compose with the specified command
 if [ "$COMMAND" = "up -d" ] || [ "$COMMAND" = "up -d --build" ]; then
   if [ -z "$SERVICES" ]; then
-    echo "Starting all services..."
-    docker-compose $COMMAND
+    echo "Starting services..."
+    docker-compose $COMMAND $PROFILES
     
     # Wait for services to start
     echo "Waiting for services to start..."
-    sleep 5
+    sleep 10
     
     # Show service status
     echo "====================================================="
@@ -90,10 +115,23 @@ if [ "$COMMAND" = "up -d" ] || [ "$COMMAND" = "up -d --build" ]; then
     echo "  - Backend API: http://localhost:8000"
     echo "  - Gradio UI:   http://localhost:7860"
     echo "====================================================="
+    
+    # Check if services are healthy
+    echo "Checking service health..."
+    sleep 5
+    backend_status=$(docker inspect --format='{{.State.Health.Status}}' $(docker-compose ps -q backend) 2>/dev/null || echo "container not found")
+    gradio_status=$(docker inspect --format='{{.State.Health.Status}}' $(docker-compose ps -q gradio) 2>/dev/null || echo "container not found")
+    
+    echo "Backend status: $backend_status"
+    echo "Gradio UI status: $gradio_status"
+    
+    if [ "$backend_status" != "healthy" ] || [ "$gradio_status" != "healthy" ]; then
+      echo "\nSome services may not be fully healthy yet. Check logs with './run_docker.sh --logs'"
+    fi
   else
     echo "Starting $SERVICES..."
-    docker-compose $COMMAND $SERVICES
+    docker-compose $COMMAND $PROFILES $SERVICES
   fi
 else
-  docker-compose $COMMAND
+  docker-compose $COMMAND $PROFILES
 fi
