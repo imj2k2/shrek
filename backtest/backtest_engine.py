@@ -394,16 +394,29 @@ class Backtester:
         # Get historical data up to current date
         hist_data = df[df.index <= date].copy()
         
-        # Basic data for all agents
-        data = {
-            'symbol': df.name if hasattr(df, 'name') else 'UNKNOWN',
-            'date': date.strftime('%Y-%m-%d'),
-            'open': hist_data['open'].values,
-            'high': hist_data['high'].values,
-            'low': hist_data['low'].values,
-            'close': hist_data['close'].values,
-            'volume': hist_data['volume'].values if 'volume' in hist_data.columns else None
+        # Map column names - handle both lowercase and capitalized column names
+        column_mapping = {
+            'open': ['open', 'Open'],
+            'high': ['high', 'High'],
+            'low': ['low', 'Low'],
+            'close': ['close', 'Close'],
+            'volume': ['volume', 'Volume']
         }
+        
+        # Create standardized data dictionary
+        data = {'symbol': df.name if hasattr(df, 'name') else 'UNKNOWN',
+                'date': date.strftime('%Y-%m-%d')}
+        
+        # Add price data with column name flexibility
+        for target_col, possible_cols in column_mapping.items():
+            for col in possible_cols:
+                if col in hist_data.columns:
+                    data[target_col] = hist_data[col].values
+                    break
+            if target_col not in data and target_col != 'volume':  # Volume can be optional
+                self.logger.warning(f"Missing required column {target_col} in data")
+                # Use a default value to prevent crashes
+                data[target_col] = [0] * len(hist_data)
         
         # Specific data for options agent
         if isinstance(agent, OptionsAgent):

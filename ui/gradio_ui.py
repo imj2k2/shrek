@@ -43,35 +43,45 @@ def run_backtest(agent, symbols, start_date, end_date, initial_capital):
     """Run a backtest via API"""
     try:
         payload = {
-            "agent": agent,
+            "agent_type": agent,
             "symbols": [s.strip() for s in symbols.split(",")],
             "start_date": start_date,
             "end_date": end_date,
             "initial_capital": float(initial_capital)
         }
         
-        response = requests.post(f"{API_BASE_URL}/backtest", json=payload)
+        logger.info(f"Sending backtest request to {API_BASE_URL}/backtest/run with payload: {payload}")
+        response = requests.post(f"{API_BASE_URL}/backtest/run", json=payload)
         
         if response.status_code == 200:
-            results = response.json()
-            
-            # Create metrics table
-            metrics = results.get("metrics", {})
-            metrics_table = [
-                {"Metric": k, "Value": v}
-                for k, v in metrics.items()
-            ]
-            
-            # Create plot
-            plot = plot_backtest_results(results)
-            
-            return json.dumps(results, indent=2), plot, metrics_table
+            try:
+                response_data = response.json()
+                logger.info(f"Received backtest response: {response_data}")
+                results = response_data.get('results', {})
+                
+                # Create metrics table
+                metrics = results.get("metrics", {})
+                metrics_table = [
+                    {"Metric": k, "Value": v}
+                    for k, v in metrics.items()
+                ]
+                
+                # Create plot
+                plot = plot_backtest_results(results)
+                
+                return json.dumps(results, indent=2), plot, metrics_table
+            except json.JSONDecodeError as je:
+                logger.error(f"JSON decode error: {je}, Response content: {response.text}")
+                return f"Error decoding response: {response.text}", None, []
         else:
             error_msg = f"Error: {response.status_code}"
             try:
-                error_msg += f" - {response.json().get('detail', '')}"
+                error_detail = response.json().get('detail', '')
+                logger.error(f"Backtest API error: {error_detail}")
+                error_msg += f" - {error_detail}"
             except:
-                pass
+                logger.error(f"Failed to parse error response: {response.text}")
+                error_msg += f" - {response.text}"
             return error_msg, None, []
     except Exception as e:
         logger.error(f"Error running backtest: {e}")
@@ -81,12 +91,12 @@ def plot_backtest_results(results):
     """Create a plotly figure from backtest results"""
     try:
         # Extract equity curve
-        equity_history = results.get("equity_history", [])
-        if not equity_history:
-            return go.Figure().update_layout(title="No equity history data available")
+        equity_curve = results.get("equity_curve", [])
+        if not equity_curve:
+            return go.Figure().update_layout(title="No equity curve data available")
         
-        dates = [item.get("date") for item in equity_history]
-        equity = [item.get("equity") for item in equity_history]
+        dates = [item.get("date") for item in equity_curve]
+        equity = [item.get("equity") for item in equity_curve]
         
         # Create figure
         fig = go.Figure()

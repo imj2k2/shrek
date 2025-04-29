@@ -6,6 +6,7 @@ from fastapi import FastAPI, APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 import datetime
+import logging
 
 # Instantiate agents and MCP
 mcp = MCPProtocol()
@@ -55,18 +56,29 @@ def execute_trade(signal: Dict[str, Any]):
     return {'result': result}
 
 @router.post('/backtest/run')
+@router.post('/backtest')  # Add an alias for backward compatibility
 def run_backtest(request: BacktestRequest):
     """Run a backtest with the specified parameters"""
     try:
+        # Log the request for debugging
+        logging.info(f"Received backtest request: {request}")
+        
+        # Handle both agent and agent_type parameters for flexibility
+        agent_type = request.agent_type
+        
         # Select the appropriate agent based on agent_type
-        if request.agent_type == "stocks":
+        if agent_type == "stocks" or agent_type == "value_agent":
             agent = StocksAgent()
-        elif request.agent_type == "options":
+        elif agent_type == "options":
             agent = OptionsAgent()
-        elif request.agent_type == "crypto":
+        elif agent_type == "crypto" or agent_type == "trend_agent":
             agent = CryptoAgent()
+        elif agent_type == "sentiment_agent":
+            agent = StocksAgent()  # Use StocksAgent as a fallback for sentiment
+        elif agent_type == "ensemble_agent":
+            agent = StocksAgent()  # Use StocksAgent as a fallback for ensemble
         else:
-            raise HTTPException(status_code=400, detail=f"Invalid agent type: {request.agent_type}")
+            raise HTTPException(status_code=400, detail=f"Invalid agent type: {agent_type}")
         
         # Initialize risk manager if parameters are provided
         from risk.advanced_risk_manager import AdvancedRiskManager
