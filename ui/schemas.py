@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 import datetime
 import logging
+import math
 
 # Instantiate agents and MCP
 mcp = MCPProtocol()
@@ -106,15 +107,70 @@ def run_backtest(request: BacktestRequest):
         )
         
         if result:
-            # Convert result to serializable format
+            # Get data source information
+            data_sources = {}
+            for symbol in request.symbols:
+                # Try to get data source from backtester's internal data
+                if hasattr(backtester, 'data') and symbol in backtester.data and hasattr(backtester.data[symbol], 'data_source'):
+                    data_sources[symbol] = backtester.data[symbol].data_source
+                else:
+                    data_sources[symbol] = 'unknown'
+            
+            # Convert result to serializable format with NaN and infinity handling
+            # First sanitize metrics to handle NaN and infinity values
+            sanitized_metrics = {}
+            for k, v in result.metrics.items():
+                if isinstance(v, float):
+                    if math.isnan(v):
+                        sanitized_metrics[k] = "NaN"
+                    elif math.isinf(v):
+                        sanitized_metrics[k] = "Infinity" if v > 0 else "-Infinity"
+                    else:
+                        sanitized_metrics[k] = v
+                else:
+                    sanitized_metrics[k] = v
+            
+            # Sanitize equity curve
+            sanitized_equity_curve = []
+            for point in result.equity_curve:
+                sanitized_point = {}
+                for k, v in point.items():
+                    if isinstance(v, float):
+                        if math.isnan(v):
+                            sanitized_point[k] = 0.0  # Replace NaN with 0
+                        elif math.isinf(v):
+                            sanitized_point[k] = 1e6 if v > 0 else -1e6  # Replace infinity with large values
+                        else:
+                            sanitized_point[k] = v
+                    else:
+                        sanitized_point[k] = v
+                sanitized_equity_curve.append(sanitized_point)
+            
+            # Sanitize trades
+            sanitized_trades = []
+            for trade in result.trades[:100]:  # Limit to first 100 trades for performance
+                sanitized_trade = {}
+                for k, v in trade.items():
+                    if isinstance(v, float):
+                        if math.isnan(v):
+                            sanitized_trade[k] = 0.0  # Replace NaN with 0
+                        elif math.isinf(v):
+                            sanitized_trade[k] = 1e6 if v > 0 else -1e6  # Replace infinity with large values
+                        else:
+                            sanitized_trade[k] = v
+                    else:
+                        sanitized_trade[k] = v
+                sanitized_trades.append(sanitized_trade)
+            
             serialized_result = {
                 'strategy_name': result.strategy_name,
                 'start_date': result.start_date.strftime('%Y-%m-%d'),
                 'end_date': result.end_date.strftime('%Y-%m-%d'),
                 'initial_capital': result.initial_capital,
-                'metrics': result.metrics,
-                'equity_curve': result.equity_curve,
-                'trades': result.trades[:100]  # Limit to first 100 trades for performance
+                'metrics': sanitized_metrics,
+                'equity_curve': sanitized_equity_curve,
+                'trades': sanitized_trades,
+                'data_sources': data_sources  # Add data source information
             }
             return {'results': serialized_result}
         else:

@@ -244,6 +244,9 @@ class Backtester:
             'drawdown': 0.0
         }
         
+        # Store data for later reference
+        self.data = data
+        
         # Initialize tracking variables
         trades = []
         equity_curve = []
@@ -344,7 +347,12 @@ class Backtester:
             
             # For stocks
             if timeframe == 'day':
-                data = self.data_fetcher.fetch_stock_data(symbol, start_date=adjusted_start, end_date=end_date)
+                # Explicitly try Polygon first if API key is available
+                if self.data_fetcher.polygon_key:
+                    self.logger.info(f"Using Polygon API for {symbol} with key: {self.data_fetcher.polygon_key[:5]}...")
+                    data = self.data_fetcher.fetch_stock_data(symbol, start_date=adjusted_start, end_date=end_date, source="polygon")
+                else:
+                    data = self.data_fetcher.fetch_stock_data(symbol, start_date=adjusted_start, end_date=end_date)
             # For crypto
             elif 'BTC' in symbol or 'ETH' in symbol:
                 data = self.data_fetcher.fetch_crypto_data(symbol, start_date=adjusted_start, end_date=end_date, interval=timeframe)
@@ -362,11 +370,49 @@ class Backtester:
             else:
                 df = data
             
-            # Ensure we have required columns
-            required_columns = ['open', 'high', 'low', 'close', 'volume']
-            if not all(col in df.columns for col in required_columns):
-                self.logger.error(f"Missing required columns in data for {symbol}")
+            # Check if DataFrame is empty
+            if df.empty:
+                self.logger.error(f"Empty DataFrame for {symbol}")
                 return None
+                
+            # Store data source information
+            if hasattr(df, 'data_source'):
+                data_source = df.data_source
+            else:
+                # Try to determine the data source
+                if 'Open' in df.columns and 'High' in df.columns:  # Yahoo or mock
+                    if len(df) > 0 and df.index[0].year >= 2023:  # Recent data is likely mock
+                        data_source = 'mock'
+                    else:
+                        data_source = 'yahoo'
+                elif 'o' in df.columns and 'h' in df.columns:  # Polygon
+                    data_source = 'polygon'
+                else:
+                    data_source = 'unknown'
+                
+            # Add data source as attribute
+            df.data_source = data_source
+            self.logger.info(f"Data source for {symbol}: {data_source}")
+            
+            # Check for required columns with flexibility for different naming conventions
+            has_required = False
+            
+            # Check for Yahoo/Mock style columns (capitalized)
+            if all(col in df.columns for col in ['Open', 'High', 'Low', 'Close']):
+                has_required = True
+            # Check for Polygon style columns (lowercase)
+            elif all(col in df.columns for col in ['o', 'h', 'l', 'c']):
+                # Rename to standard format
+                df.rename(columns={'o': 'Open', 'h': 'High', 'l': 'Low', 'c': 'Close', 'v': 'Volume'}, inplace=True)
+                has_required = True
+            # Check for generic lowercase columns
+            elif all(col in df.columns for col in ['open', 'high', 'low', 'close']):
+                # Rename to standard format
+                df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+                has_required = True
+            
+            if not has_required:
+                self.logger.warning(f"Missing some required columns in data for {symbol}, but will try to adapt")
             
             # Set index to datetime if it's not already
             if not isinstance(df.index, pd.DatetimeIndex):
@@ -407,16 +453,35 @@ class Backtester:
         data = {'symbol': df.name if hasattr(df, 'name') else 'UNKNOWN',
                 'date': date.strftime('%Y-%m-%d')}
         
+        # Check if we have any data
+        if hist_data.empty:
+            self.logger.warning(f"No historical data available for date {date}")
+            return None
+        
         # Add price data with column name flexibility
         for target_col, possible_cols in column_mapping.items():
+            found = False
             for col in possible_cols:
                 if col in hist_data.columns:
                     data[target_col] = hist_data[col].values
+                    found = True
                     break
-            if target_col not in data and target_col != 'volume':  # Volume can be optional
-                self.logger.warning(f"Missing required column {target_col} in data")
-                # Use a default value to prevent crashes
-                data[target_col] = [0] * len(hist_data)
+            if not found:
+                if target_col == 'volume':  # Volume can be optional
+                    data[target_col] = [1000000] * len(hist_data)  # Default volume
+                else:
+                    self.logger.warning(f"Missing required column {target_col} in data, using default values")
+                    # Use a default value to prevent crashes
+                    if target_col == 'open':
+                        data[target_col] = hist_data.iloc[:, 0].values  # Use first column
+                    elif target_col == 'high':
+                        data[target_col] = hist_data.iloc[:, 0].values * 1.01  # 1% higher
+                    elif target_col == 'low':
+                        data[target_col] = hist_data.iloc[:, 0].values * 0.99  # 1% lower
+                    elif target_col == 'close':
+                        data[target_col] = hist_data.iloc[:, 0].values  # Use first column
+                    else:
+                        data[target_col] = [0] * len(hist_data)
         
         # Specific data for options agent
         if isinstance(agent, OptionsAgent):

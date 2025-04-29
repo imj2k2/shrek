@@ -59,20 +59,42 @@ def run_backtest(agent, symbols, start_date, end_date, initial_capital):
                 logger.info(f"Received backtest response: {response_data}")
                 results = response_data.get('results', {})
                 
+                # Get data source information
+                data_sources = results.get("data_sources", {})
+                
+                # Add data source information to results for display
+                if data_sources:
+                    data_source_info = "\n\nData Sources:\n"
+                    for symbol, source in data_sources.items():
+                        data_source_info += f"  {symbol}: {source.upper()}\n"
+                    
+                    # Add to the beginning of the results JSON
+                    results_with_sources = {"data_source_summary": data_source_info.strip()}
+                    results_with_sources.update(results)
+                else:
+                    results_with_sources = results
+                
                 # Create metrics table
                 metrics = results.get("metrics", {})
+                
+                # Add data source information to metrics table
                 metrics_table = [
                     {"Metric": k, "Value": v}
                     for k, v in metrics.items()
                 ]
                 
+                # Add data sources to metrics table
+                for symbol, source in data_sources.items():
+                    metrics_table.append({"Metric": f"Data Source ({symbol})", "Value": source.upper()})
+                
                 # Create plot
                 plot = plot_backtest_results(results)
                 
-                return json.dumps(results, indent=2), plot, metrics_table
+                # Return in order: metrics table, plot, results JSON
+                return metrics_table, plot, json.dumps(results_with_sources, indent=2)
             except json.JSONDecodeError as je:
                 logger.error(f"JSON decode error: {je}, Response content: {response.text}")
-                return f"Error decoding response: {response.text}", None, []
+                return [], None, f"Error decoding response: {response.text}"
         else:
             error_msg = f"Error: {response.status_code}"
             try:
@@ -80,12 +102,11 @@ def run_backtest(agent, symbols, start_date, end_date, initial_capital):
                 logger.error(f"Backtest API error: {error_detail}")
                 error_msg += f" - {error_detail}"
             except:
-                logger.error(f"Failed to parse error response: {response.text}")
-                error_msg += f" - {response.text}"
-            return error_msg, None, []
+                pass
+            return [], None, error_msg
     except Exception as e:
         logger.error(f"Error running backtest: {e}")
-        return f"Error: {str(e)}", None, []
+        return [], None, f"Error: {str(e)}"
 
 def plot_backtest_results(results):
     """Create a plotly figure from backtest results"""
@@ -201,22 +222,22 @@ def create_ui():
                     run_backtest_btn = gr.Button("Run Backtest")
             
             with gr.Row():
-                backtest_results = gr.JSON(label="Backtest Results")
-            
-            with gr.Row():
-                backtest_plot = gr.Plot(label="Equity Curve")
-            
-            with gr.Row():
                 backtest_metrics = gr.DataFrame(
                     headers=["Metric", "Value"],
                     label="Performance Metrics"
                 )
             
+            with gr.Row():
+                backtest_plot = gr.Plot(label="Equity Curve")
+            
+            with gr.Row():
+                backtest_results = gr.JSON(label="Backtest Results")
+            
             # Set up backtest button
             run_backtest_btn.click(
                 run_backtest,
                 inputs=[backtest_agent, backtest_symbols, backtest_start, backtest_end, backtest_capital],
-                outputs=[backtest_results, backtest_plot, backtest_metrics]
+                outputs=[backtest_metrics, backtest_plot, backtest_results]
             )
         
         # Initialize with default data

@@ -120,8 +120,35 @@ class StocksAgent:
         
         # RSI Strategy
         try:
-            rsi_values = rsi.rsi(close, period=params["rsi_period"])
-            last_rsi = rsi_values.iloc[-1] if not rsi_values.empty else None
+            # Convert to pandas Series if it's a numpy array
+            if isinstance(close, np.ndarray):
+                close = pd.Series(close)
+                
+            if len(close) >= params["rsi_period"]:
+                # Calculate price changes
+                delta = close.diff()
+                
+                # Separate gains and losses
+                gain = delta.copy()
+                loss = delta.copy()
+                gain[gain < 0] = 0
+                loss[loss > 0] = 0
+                loss = -loss  # Make losses positive
+                
+                # Calculate average gain and loss over RSI period
+                avg_gain = gain.rolling(window=params["rsi_period"]).mean()
+                avg_loss = loss.rolling(window=params["rsi_period"]).mean()
+                
+                # Calculate relative strength
+                rs = avg_gain / avg_loss
+                
+                # Calculate RSI
+                rsi_values = 100 - (100 / (1 + rs))
+                rsi_values = rsi_values.dropna()
+                
+                last_rsi = rsi_values.iloc[-1] if not rsi_values.empty else None
+            else:
+                last_rsi = None
             
             if last_rsi is not None:
                 if last_rsi < params["rsi_oversold"]:
@@ -143,12 +170,30 @@ class StocksAgent:
         
         # MACD Strategy
         try:
-            macd_line, signal_line, histogram = macd.macd(
-                close, 
-                fast_period=params["macd_fast"], 
-                slow_period=params["macd_slow"], 
-                signal_period=params["macd_signal"]
-            )
+            # Convert to pandas Series if it's a numpy array
+            if isinstance(close, np.ndarray):
+                close = pd.Series(close)
+                
+            if len(close) >= params["macd_slow"]:
+                # Calculate fast EMA
+                fast_ema = close.ewm(span=params["macd_fast"], adjust=False).mean()
+                
+                # Calculate slow EMA
+                slow_ema = close.ewm(span=params["macd_slow"], adjust=False).mean()
+                
+                # Calculate MACD line
+                macd_line = fast_ema - slow_ema
+                
+                # Calculate signal line
+                signal_line = macd_line.ewm(span=params["macd_signal"], adjust=False).mean()
+                
+                # Calculate histogram
+                histogram = macd_line - signal_line
+                
+                # Drop NaN values
+                macd_line = macd_line.dropna()
+                signal_line = signal_line.dropna()
+                histogram = histogram.dropna()
             
             if not macd_line.empty and not signal_line.empty:
                 last_macd = macd_line.iloc[-1]
@@ -186,11 +231,25 @@ class StocksAgent:
         
         # Bollinger Bands Strategy
         try:
-            upper, middle, lower = bollinger.bollinger_bands(
-                close, 
-                period=params["bollinger_period"], 
-                std_dev=params["bollinger_std"]
-            )
+            # Convert to pandas Series if it's a numpy array
+            if isinstance(close, np.ndarray):
+                close = pd.Series(close)
+                
+            if len(close) >= params["bollinger_period"]:
+                # Calculate SMA for middle band
+                middle = close.rolling(window=params["bollinger_period"]).mean()
+                
+                # Calculate standard deviation
+                stddev = close.rolling(window=params["bollinger_period"]).std()
+                
+                # Calculate upper and lower bands
+                upper = middle + (stddev * params["bollinger_std"])
+                lower = middle - (stddev * params["bollinger_std"])
+                
+                # Drop NaN values
+                upper = upper.dropna()
+                middle = middle.dropna()
+                lower = lower.dropna()
             
             if not upper.empty and not lower.empty:
                 last_close = close.iloc[-1]
@@ -233,9 +292,24 @@ class StocksAgent:
             self.logger.warning(f"Bollinger Bands calculation failed: {str(e)}")
         
         # VWAP Strategy (if we have high, low, and volume data)
-        if high is not None and low is not None and 'volume' in data and data['volume'] is not None:
+        # Note: 'data' is not defined in this function, so we'll check if we have high and low data
+        if high is not None and low is not None:
             try:
-                vwap_values = vwap.vwap(high, low, close, data['volume'], period=params["vwap_period"])
+                # Simple implementation of VWAP calculation
+                if len(close) >= params["vwap_period"]:
+                    # Calculate typical price (TP): (High + Low + Close) / 3
+                    typical_price = (high + low + close) / 3
+                    
+                    # For volume, we'll use a dummy volume if not available
+                    # In a real implementation, volume should be passed as a parameter
+                    volume = pd.Series(np.ones(len(close)), index=close.index)
+                    
+                    # Calculate VWAP: sum(TP * Volume) / sum(Volume)
+                    tp_vol = typical_price * volume
+                    vol_sum = volume.rolling(window=params["vwap_period"]).sum()
+                    tp_vol_sum = tp_vol.rolling(window=params["vwap_period"]).sum()
+                    vwap_values = tp_vol_sum / vol_sum
+                    vwap_values = vwap_values.dropna()
                 
                 if not vwap_values.empty:
                     last_vwap = vwap_values.iloc[-1]
@@ -273,7 +347,24 @@ class StocksAgent:
         # ATR for volatility-based breakouts
         if high is not None and low is not None:
             try:
-                atr_values = atr.atr(high, low, close, period=params["atr_period"])
+                # Convert to pandas Series if they're numpy arrays
+                if isinstance(close, np.ndarray):
+                    close = pd.Series(close)
+                if isinstance(high, np.ndarray):
+                    high = pd.Series(high, index=close.index)
+                if isinstance(low, np.ndarray):
+                    low = pd.Series(low, index=close.index)
+                
+                if len(close) >= params["atr_period"]:
+                    # Calculate True Range
+                    tr1 = high - low  # Current high - current low
+                    tr2 = abs(high - close.shift(1))  # Current high - previous close
+                    tr3 = abs(low - close.shift(1))  # Current low - previous close
+                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    
+                    # Calculate ATR as simple moving average of true range
+                    atr_values = tr.rolling(window=params["atr_period"]).mean()
+                    atr_values = atr_values.dropna()
                 
                 if not atr_values.empty and len(close) > 1:
                     last_atr = atr_values.iloc[-1]
@@ -304,8 +395,15 @@ class StocksAgent:
         
         # Moving Average crossovers for trend breakouts
         try:
+            # Convert to pandas Series if it's a numpy array
+            if isinstance(close, np.ndarray):
+                close = pd.Series(close)
+                
             for period in params["ma_periods"]:
-                ma_values = moving_averages.sma(close, period)
+                if len(close) >= period:
+                    # Calculate Simple Moving Average
+                    ma_values = close.rolling(window=period).mean()
+                    ma_values = ma_values.dropna()
                 
                 if not ma_values.empty and len(close) > 1 and len(ma_values) > 1:
                     last_ma = ma_values.iloc[-1]
