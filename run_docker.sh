@@ -2,7 +2,7 @@
 # run_docker.sh - Script to run the trading platform in Docker
 
 # Set default environment variables if not already set
-
+POLYGON_API_KEY="g2sSLO_cQpKCQPWuLkA2w3d35IoNDAse"
 export POLYGON_API_KEY=${POLYGON_API_KEY:-"demo"}
 export ALPACA_API_KEY=${ALPACA_API_KEY:-"demo"}
 export ALPACA_API_SECRET=${ALPACA_API_SECRET:-"demo"}
