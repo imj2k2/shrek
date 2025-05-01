@@ -4,3 +4,6 @@ from .options_agent import OptionsAgent
 from .crypto_agent import CryptoAgent
 from .risk_agent import RiskAgent
 from .executor import TradingExecutor
+from .customizable_agent import CustomizableAgent
+from .strategy_library import StrategyLibrary
+from .llm_insights import LLMInsightGenerator

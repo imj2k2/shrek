@@ -1,0 +1,6 @@
+- Ability to download bulk data from polygon.io via s3 bucket
+- ability to do deep analysis based on 13F filing and influencer trading - hedge funds and politicians
+- stock screeners with pre-defined criteria and custom inputs 
+- ability for an llm to review market data and re-adjust the strategies and positions
+- ability to persist the data across container restarts
+- security - strong authentication to secure live trading interface

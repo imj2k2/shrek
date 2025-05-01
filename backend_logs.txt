@@ -1,0 +1,9 @@
+INFO:     172.18.0.4:47650 - "GET /portfolio HTTP/1.1" 200 OK
+INFO:     172.18.0.4:45648 - "POST /backtest/run HTTP/1.1" 500 Internal Server Error
+INFO:     172.18.0.4:49110 - "POST /backtest/run HTTP/1.1" 500 Internal Server Error
+INFO:     172.18.0.4:49126 - "POST /backtest/run HTTP/1.1" 500 Internal Server Error
+INFO:     172.18.0.4:49130 - "POST /backtest/run HTTP/1.1" 500 Internal Server Error
+INFO:     172.18.0.4:49272 - "POST /backtest/run HTTP/1.1" 500 Internal Server Error
+INFO:     172.18.0.4:49278 - "POST /backtest/run HTTP/1.1" 500 Internal Server Error
+INFO:     172.18.0.4:57216 - "POST /backtest/run HTTP/1.1" 500 Internal Server Error
+INFO:     172.18.0.4:57226 - "POST /backtest/run HTTP/1.1" 500 Internal Server Error

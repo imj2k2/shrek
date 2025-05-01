@@ -76,20 +76,71 @@ class StocksAgent:
             volume = pd.Series(data['volume']) if 'volume' in data and isinstance(data['volume'], list) else None
             symbol = data.get('symbol', 'UNKNOWN')
             
-            # Generate signals from each strategy
-            momentum_signals = self._momentum_strategy(close) if self.strategies["momentum"]["enabled"] else {}
-            mean_reversion_signals = self._mean_reversion_strategy(close, high, low) if self.strategies["mean_reversion"]["enabled"] else {}
-            breakout_signals = self._breakout_strategy(close, high, low, volume) if self.strategies["breakout"]["enabled"] else {}
+            # Get the current price for signal generation
+            current_price = close.iloc[-1] if hasattr(close, 'iloc') else close[-1]
             
-            # Combine signals with weights
-            combined_signals = self._combine_signals({
-                "momentum": momentum_signals,
-                "mean_reversion": mean_reversion_signals,
-                "breakout": breakout_signals
-            })
+            # Check if we are running as value_agent (backward compatibility)
+            agent_type = data.get('agent_type', None)
+            
+            if agent_type == 'value_agent':
+                # Use the dedicated value strategy
+                value_signals = self._value_strategy(data)
+                combined_signals = {'action': 'hold', 'buy_signals': [], 'sell_signals': []}
+                
+                for signal_id, signal in value_signals.items():
+                    if signal['action'] == 'buy':
+                        combined_signals['buy_signals'].append(signal)
+                    elif signal['action'] == 'sell':
+                        combined_signals['sell_signals'].append(signal)
+                
+                # Determine overall action
+                if combined_signals['buy_signals']:
+                    combined_signals['action'] = 'buy'
+                    combined_signals['buy_strength'] = max(s['strength'] for s in combined_signals['buy_signals'])
+                    combined_signals['sell_strength'] = 0
+                    combined_signals['net_strength'] = combined_signals['buy_strength']
+                elif combined_signals['sell_signals']:
+                    combined_signals['action'] = 'sell'
+                    combined_signals['sell_strength'] = max(s['strength'] for s in combined_signals['sell_signals'])
+                    combined_signals['buy_strength'] = 0
+                    combined_signals['net_strength'] = -combined_signals['sell_strength']
+            else:
+                # Regular mode - use all enabled strategies
+                momentum_signals = self._momentum_strategy(close) if self.strategies["momentum"]["enabled"] else {}
+                mean_reversion_signals = self._mean_reversion_strategy(close, high, low) if self.strategies["mean_reversion"]["enabled"] else {}
+                breakout_signals = self._breakout_strategy(close, high, low, volume) if self.strategies["breakout"]["enabled"] else {}
+                
+                # Combine signals with weights
+                combined_signals = self._combine_signals({
+                    "momentum": momentum_signals,
+                    "mean_reversion": mean_reversion_signals,
+                    "breakout": breakout_signals
+                })
             
             # Add position sizing
             final_signals = self._apply_position_sizing(combined_signals, data)
+            
+            # Ensure we have quantity information for the backtest engine
+            if final_signals['action'] in ['buy', 'sell'] and 'qty' not in final_signals:
+                # Default to 10 shares if no quantity specified
+                final_signals['qty'] = 10
+                
+            # Ensure we have a price for the backtest engine
+            if 'price' not in final_signals:
+                final_signals['price'] = current_price
+                
+            # Add strategy information for tracking
+            if 'strategy' not in final_signals:
+                if final_signals['action'] == 'buy' and final_signals.get('buy_signals'):
+                    # Use the strongest buy signal's strategy
+                    strongest_signal = max(final_signals['buy_signals'], key=lambda x: x['strength']) if final_signals['buy_signals'] else None
+                    final_signals['strategy'] = strongest_signal.get('strategy', 'combined') if strongest_signal else 'combined'
+                elif final_signals['action'] == 'sell' and final_signals.get('sell_signals'):
+                    # Use the strongest sell signal's strategy
+                    strongest_signal = max(final_signals['sell_signals'], key=lambda x: x['strength']) if final_signals['sell_signals'] else None
+                    final_signals['strategy'] = strongest_signal.get('strategy', 'combined') if strongest_signal else 'combined'
+                else:
+                    final_signals['strategy'] = 'combined'
             
             # Add metadata
             final_signals['timestamp'] = datetime.now().isoformat()
@@ -116,111 +167,123 @@ class StocksAgent:
     def _momentum_strategy(self, close: pd.Series) -> Dict[str, Any]:
         """Momentum strategy using RSI and MACD"""
         signals = {}
+        
+        # Convert to pandas Series if it's a numpy array
+        if isinstance(close, np.ndarray):
+            close = pd.Series(close)
+        
+        # Get parameters
         params = self.strategies["momentum"]["params"]
         
-        # RSI Strategy
-        try:
-            # Convert to pandas Series if it's a numpy array
-            if isinstance(close, np.ndarray):
-                close = pd.Series(close)
-                
-            if len(close) >= params["rsi_period"]:
-                # Calculate price changes
-                delta = close.diff()
-                
-                # Separate gains and losses
-                gain = delta.copy()
-                loss = delta.copy()
-                gain[gain < 0] = 0
-                loss[loss > 0] = 0
-                loss = -loss  # Make losses positive
-                
-                # Calculate average gain and loss over RSI period
-                avg_gain = gain.rolling(window=params["rsi_period"]).mean()
-                avg_loss = loss.rolling(window=params["rsi_period"]).mean()
-                
-                # Calculate relative strength
-                rs = avg_gain / avg_loss
-                
-                # Calculate RSI
-                rsi_values = 100 - (100 / (1 + rs))
-                rsi_values = rsi_values.dropna()
-                
-                last_rsi = rsi_values.iloc[-1] if not rsi_values.empty else None
-            else:
-                last_rsi = None
+        # Calculate RSI
+        if len(close) >= params["rsi_period"]:
+            # Calculate price changes
+            delta = close.diff()
             
-            if last_rsi is not None:
-                if last_rsi < params["rsi_oversold"]:
-                    signals['rsi'] = {
-                        'action': 'buy', 
-                        'strength': (params["rsi_oversold"] - last_rsi) / params["rsi_oversold"], 
-                        'reason': f'RSI oversold ({last_rsi:.2f})',
-                        'value': last_rsi
+            # Separate gains and losses
+            gain = delta.copy()
+            loss = delta.copy()
+            gain[gain < 0] = 0
+            loss[loss > 0] = 0
+            loss = -loss  # Make losses positive
+            
+            # Calculate average gain and loss
+            avg_gain = gain.rolling(window=params["rsi_period"]).mean()
+            avg_loss = loss.rolling(window=params["rsi_period"]).mean()
+            
+            # Calculate RS and RSI
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+            
+            # Get the latest RSI value
+            latest_rsi = rsi.iloc[-1] if not rsi.empty else None
+            
+            if latest_rsi is not None:
+                # Oversold condition (potential buy) - Make more aggressive
+                if latest_rsi < params["rsi_oversold"] + 10:  # Increase threshold to generate more signals
+                    # Scale strength based on how oversold
+                    strength = 0.5 + ((params["rsi_oversold"] + 10 - latest_rsi) / 40)
+                    signals["rsi_oversold"] = {
+                        "action": "buy",
+                        "strength": min(0.9, strength),  # Cap at 0.9
+                        "reason": f"RSI oversold ({latest_rsi:.2f})",
+                        "strategy": "momentum"
                     }
-                elif last_rsi > params["rsi_overbought"]:
-                    signals['rsi'] = {
-                        'action': 'sell', 
-                        'strength': (last_rsi - params["rsi_overbought"]) / (100 - params["rsi_overbought"]), 
-                        'reason': f'RSI overbought ({last_rsi:.2f})',
-                        'value': last_rsi
+                # Overbought condition (potential sell) - Make more aggressive
+                elif latest_rsi > params["rsi_overbought"] - 10:  # Decrease threshold to generate more signals
+                    # Scale strength based on how overbought
+                    strength = 0.5 + ((latest_rsi - (params["rsi_overbought"] - 10)) / 40)
+                    signals["rsi_overbought"] = {
+                        "action": "sell",
+                        "strength": min(0.9, strength),  # Cap at 0.9
+                        "reason": f"RSI overbought ({latest_rsi:.2f})",
+                        "strategy": "momentum"
                     }
-        except Exception as e:
-            self.logger.warning(f"RSI calculation failed: {str(e)}")
         
         # MACD Strategy
         try:
-            # Convert to pandas Series if it's a numpy array
-            if isinstance(close, np.ndarray):
-                close = pd.Series(close)
-                
             if len(close) >= params["macd_slow"]:
-                # Calculate fast EMA
-                fast_ema = close.ewm(span=params["macd_fast"], adjust=False).mean()
+                # Calculate EMAs
+                ema_fast = close.ewm(span=params["macd_fast"], adjust=False).mean()
+                ema_slow = close.ewm(span=params["macd_slow"], adjust=False).mean()
                 
-                # Calculate slow EMA
-                slow_ema = close.ewm(span=params["macd_slow"], adjust=False).mean()
-                
-                # Calculate MACD line
-                macd_line = fast_ema - slow_ema
-                
-                # Calculate signal line
+                # Calculate MACD line and signal line
+                macd_line = ema_fast - ema_slow
                 signal_line = macd_line.ewm(span=params["macd_signal"], adjust=False).mean()
                 
-                # Calculate histogram
-                histogram = macd_line - signal_line
-                
-                # Drop NaN values
-                macd_line = macd_line.dropna()
-                signal_line = signal_line.dropna()
-                histogram = histogram.dropna()
+                # Get the latest values
+                latest_macd = macd_line.iloc[-1] if not macd_line.empty else None
+                latest_signal = signal_line.iloc[-1] if not signal_line.empty else None
             
-            if not macd_line.empty and not signal_line.empty:
-                last_macd = macd_line.iloc[-1]
-                last_signal = signal_line.iloc[-1]
-                prev_macd = macd_line.iloc[-2] if len(macd_line) > 1 else None
-                prev_signal = signal_line.iloc[-2] if len(signal_line) > 1 else None
-                
-                # MACD crossover (bullish)
-                if prev_macd and prev_signal and prev_macd < prev_signal and last_macd > last_signal:
-                    signals['macd_crossover'] = {
-                        'action': 'buy',
-                        'strength': 0.8,
-                        'reason': 'MACD bullish crossover',
-                        'macd': last_macd,
-                        'signal': last_signal
-                    }
-                # MACD crossunder (bearish)
-                elif prev_macd and prev_signal and prev_macd > prev_signal and last_macd < last_signal:
-                    signals['macd_crossover'] = {
-                        'action': 'sell',
-                        'strength': 0.8,
-                        'reason': 'MACD bearish crossover',
-                        'macd': last_macd,
-                        'signal': last_signal
-                    }
+                if latest_macd is not None and latest_signal is not None:
+                    # MACD crosses above signal line (potential buy)
+                    if len(macd_line) > 1 and len(signal_line) > 1:
+                        prev_macd = macd_line.iloc[-2]
+                        prev_signal = signal_line.iloc[-2]
+                        
+                        # Calculate distance between MACD and signal line
+                        macd_distance = abs(latest_macd - latest_signal)
+                        norm_distance = macd_distance / abs(latest_signal) if latest_signal != 0 else 0
+                    
+                    # MACD crosses or is about to cross above signal line (potential buy)
+                    if (prev_macd < prev_signal and latest_macd > latest_signal) or \
+                       (latest_macd < latest_signal and (latest_signal - latest_macd) / abs(latest_signal) < 0.05):
+                        signals["macd_cross_above"] = {
+                            "action": "buy",
+                            "strength": min(0.8, 0.6 + norm_distance),
+                            "reason": "MACD crossed above signal line",
+                            "strategy": "momentum"
+                        }
+                    # MACD crosses or is about to cross below signal line (potential sell)
+                    elif (prev_macd > prev_signal and latest_macd < latest_signal) or \
+                         (latest_macd > latest_signal and (latest_macd - latest_signal) / abs(latest_signal) < 0.05):
+                        signals["macd_cross_below"] = {
+                            "action": "sell",
+                            "strength": min(0.8, 0.6 + norm_distance),
+                            "reason": "MACD crossed below signal line",
+                            "strategy": "momentum"
+                        }
+                        
+                    # MACD is positive and increasing (bullish momentum)
+                    if latest_macd > 0 and len(macd_line) > 5 and latest_macd > macd_line.iloc[-5]:
+                        signals["macd_bullish"] = {
+                            "action": "buy",
+                            "strength": 0.5,
+                            "reason": "MACD is positive and increasing",
+                            "strategy": "momentum"
+                        }
+                        
+                    # MACD is negative and decreasing (bearish momentum)
+                    elif latest_macd < 0 and len(macd_line) > 5 and latest_macd < macd_line.iloc[-5]:
+                        signals["macd_bearish"] = {
+                            "action": "sell",
+                            "strength": 0.5,
+                            "reason": "MACD is negative and decreasing",
+                            "strategy": "momentum"
+                        }
         except Exception as e:
             self.logger.warning(f"MACD calculation failed: {str(e)}")
+        
         
         return signals
     
@@ -549,3 +612,156 @@ class StocksAgent:
         # This would be implemented in a production system
         # For now, it's a placeholder
         pass
+        
+    def _value_strategy(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Value investing strategy specifically for the value_agent"""
+        signals = {}
+        
+        # Extract data
+        try:
+            # Ensure we have the required data
+            if 'close' not in data or not data['close'] or len(data['close']) < 20:
+                return {'action': 'hold', 'reason': 'Insufficient data for value strategy'}
+                
+            # Make sure we convert arrays to pandas Series for calculations
+            close_values = data['close']
+            symbol = data.get('symbol', 'UNKNOWN')
+            
+            # Convert to pandas Series if it's a numpy array or list
+            if isinstance(close_values, (list, np.ndarray)):
+                close = pd.Series(close_values)
+            elif isinstance(close_values, pd.Series):
+                close = close_values
+            else:
+                self.logger.warning(f"Unexpected close price data type: {type(close_values)}")
+                return {'action': 'hold', 'reason': 'Invalid data format'}
+            
+            # Get the current price
+            current_price = close.iloc[-1] if len(close) > 0 else 0
+            if current_price == 0:
+                return {'action': 'hold', 'reason': 'Invalid price data'}
+                
+            # Calculate simple moving averages
+            if len(close) >= 20:
+                # Calculate MAs using pandas functions
+                short_window = 5
+                med_window = 10
+                long_window = 20
+                
+                short_ma = close.rolling(window=short_window).mean()
+                med_ma = close.rolling(window=med_window).mean()
+                long_ma = close.rolling(window=long_window).mean()
+                
+                # Get latest values that aren't NaN
+                if not short_ma.empty and not np.isnan(short_ma.iloc[-1]):
+                    latest_short = short_ma.iloc[-1]
+                    latest_med = med_ma.iloc[-1]
+                    latest_long = long_ma.iloc[-1]
+                    
+                    # Log for debugging
+                    self.logger.info(f"Value strategy MAs - Short: {latest_short:.2f}, Med: {latest_med:.2f}, Long: {latest_long:.2f}")
+                    
+                    # Generate signals based on MA crossovers
+                    if latest_short > latest_med:
+                        signals["ma_bullish"] = {
+                            'action': 'buy',
+                            'symbol': symbol,
+                            'qty': 10,
+                            'price': current_price,
+                            'strength': 0.8,
+                            'reason': f'Bullish MA: 5-day ({latest_short:.2f}) > 10-day ({latest_med:.2f})'
+                        }
+                    elif latest_short < latest_long:
+                        signals["ma_bearish"] = {
+                            'action': 'sell',
+                            'symbol': symbol,
+                            'qty': 10,
+                            'price': current_price,
+                            'strength': 0.8,
+                            'reason': f'Bearish MA: 5-day ({latest_short:.2f}) < 20-day ({latest_long:.2f})'
+                        }
+            
+            # Price momentum strategy - safer implementation
+            if len(close) >= 10:
+                try:
+                    # Calculate 5-day price change safely
+                    if close.iloc[-5] > 0:  # Avoid division by zero
+                        price_change_5d = (close.iloc[-1] / close.iloc[-5] - 1) * 100
+                        
+                        # Generate signals based on momentum
+                        if price_change_5d > 1.0:  # 1% up in 5 days
+                            signals["momentum_up"] = {
+                                'action': 'buy',
+                                'symbol': symbol,
+                                'qty': max(5, int(10 * (price_change_5d / 2))),  # More shares for stronger momentum
+                                'price': current_price,
+                                'strength': min(0.9, 0.7 + price_change_5d/10),
+                                'reason': f'Strong momentum: +{price_change_5d:.1f}% in 5 days'
+                            }
+                        elif price_change_5d < -1.0:  # 1% down in 5 days
+                            signals["momentum_down"] = {
+                                'action': 'sell',
+                                'symbol': symbol,
+                                'qty': max(5, int(10 * (abs(price_change_5d) / 2))),
+                                'price': current_price,
+                                'strength': min(0.9, 0.7 + abs(price_change_5d)/10),
+                                'reason': f'Negative momentum: {price_change_5d:.1f}% in 5 days'
+                            }
+                except Exception as e:
+                    self.logger.warning(f"Error calculating momentum: {str(e)}")
+            
+            # Simple price pattern: buy on dips, sell on peaks - safer implementation
+            if len(close) >= 3:
+                try:
+                    # Check for short-term price patterns safely
+                    if close.iloc[-2] > 0:  # Avoid division by zero
+                        two_day_change = (close.iloc[-1] / close.iloc[-2] - 1) * 100
+                        
+                        # Generate basic mean reversion signals - buy dips, sell peaks
+                        if two_day_change < -0.5:  # 0.5% dip in a day - buy opportunity
+                            signals["buy_dip"] = {
+                                'action': 'buy',
+                                'symbol': symbol,
+                                'qty': 10,
+                                'price': current_price,
+                                'strength': 0.75,
+                                'reason': f'Buying the dip: {two_day_change:.1f}% drop'
+                            }
+                        elif two_day_change > 0.5:  # 0.5% rise in a day - sell opportunity
+                            signals["sell_peak"] = {
+                                'action': 'sell',
+                                'symbol': symbol,
+                                'qty': 10,
+                                'price': current_price,
+                                'strength': 0.75,
+                                'reason': f'Selling the peak: +{two_day_change:.1f}% rise'
+                            }
+                except Exception as e:
+                    self.logger.warning(f"Error calculating price patterns: {str(e)}")
+                    
+            # Ensure we have at least one signal if there's enough data
+            if not signals and len(close) > 20:
+                # Generate a simple buy signal based on recent price performance
+                if close.iloc[-1] > close.iloc[-20]:  # Price is higher than 20 days ago
+                    signals["trend_following"] = {
+                        'action': 'buy',
+                        'symbol': symbol,
+                        'qty': 10,
+                        'price': current_price,
+                        'strength': 0.6,
+                        'reason': 'Following upward trend'
+                    }
+                else:  # Price is lower than 20 days ago
+                    signals["trend_following"] = {
+                        'action': 'sell',
+                        'symbol': symbol,
+                        'qty': 10,
+                        'price': current_price,
+                        'strength': 0.6,
+                        'reason': 'Following downward trend'
+                    }
+            
+        except Exception as e:
+            self.logger.error(f"Error in value strategy: {str(e)}")
+            
+        return signals

@@ -25,7 +25,8 @@ class BacktestResult:
                  initial_capital: float,
                  trades: List[Dict[str, Any]],
                  equity_curve: List[Dict[str, Any]],
-                 metrics: Dict[str, Any]):
+                 metrics: Dict[str, Any],
+                 benchmark_data: Optional[pd.DataFrame] = None):
         self.strategy_name = strategy_name
         self.start_date = start_date
         self.end_date = end_date
@@ -33,18 +34,36 @@ class BacktestResult:
         self.trades = trades
         self.equity_curve = equity_curve
         self.metrics = metrics
+        self.benchmark_data = benchmark_data
     
     def plot_equity_curve(self, save_path: Optional[str] = None):
-        """Plot equity curve with drawdowns"""
+        """Plot equity curve with drawdowns and benchmark comparison"""
         df = pd.DataFrame(self.equity_curve)
         df['date'] = pd.to_datetime(df['date'])
         df.set_index('date', inplace=True)
         
-        # Create figure with two subplots
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), gridspec_kw={'height_ratios': [3, 1]})
+        # Create figure with three subplots if benchmark data is available, otherwise two
+        if self.benchmark_data is not None and not self.benchmark_data.empty:
+            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 12), gridspec_kw={'height_ratios': [3, 1, 1]})
+        else:
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), gridspec_kw={'height_ratios': [3, 1]})
         
         # Plot equity curve
-        ax1.plot(df.index, df['equity'], label='Equity', color='blue')
+        ax1.plot(df.index, df['equity'], label='Strategy', color='blue')
+        
+        # Add benchmark to the plot if available
+        if self.benchmark_data is not None and not self.benchmark_data.empty:
+            # Normalize benchmark to the same starting capital
+            benchmark_df = self.benchmark_data.copy()
+            if 'close' in benchmark_df.columns:
+                benchmark_df = benchmark_df.loc[benchmark_df.index >= df.index[0]]
+                benchmark_df = benchmark_df.loc[benchmark_df.index <= df.index[-1]]
+                
+                # Calculate benchmark performance
+                initial_price = benchmark_df['close'].iloc[0]
+                benchmark_performance = benchmark_df['close'] / initial_price * self.initial_capital
+                ax1.plot(benchmark_df.index, benchmark_performance, label='SPY Benchmark', color='green', linestyle='--')
+        
         ax1.set_title(f'Equity Curve - {self.strategy_name}')
         ax1.set_ylabel('Portfolio Value ($)')
         ax1.grid(True)
@@ -56,6 +75,31 @@ class BacktestResult:
         ax2.set_ylabel('Drawdown %')
         ax2.set_ylim(bottom=0, top=max(df['drawdown'] * 100) * 1.5)
         ax2.grid(True)
+        
+        # Plot relative performance compared to benchmark if available
+        if self.benchmark_data is not None and not self.benchmark_data.empty and 'close' in self.benchmark_data.columns:
+            benchmark_df = self.benchmark_data.copy()
+            benchmark_df = benchmark_df.loc[benchmark_df.index >= df.index[0]]
+            benchmark_df = benchmark_df.loc[benchmark_df.index <= df.index[-1]]
+            
+            if not benchmark_df.empty:
+                # Calculate relative performance
+                strategy_returns = df['equity'].pct_change().fillna(0)
+                benchmark_returns = benchmark_df['close'].pct_change().fillna(0)
+                
+                # Reindex benchmark to match strategy dates
+                benchmark_returns = benchmark_returns.reindex(df.index, method='ffill')
+                
+                # Calculate cumulative excess return
+                excess_returns = strategy_returns - benchmark_returns
+                cumulative_excess = (1 + excess_returns).cumprod() - 1
+                
+                # Plot excess return
+                ax3.plot(df.index, cumulative_excess * 100, color='purple')
+                ax3.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
+                ax3.set_title('Excess Return vs Benchmark (%)')
+                ax3.set_ylabel('Excess Return %')
+                ax3.grid(True)
         
         plt.tight_layout()
         
@@ -174,7 +218,10 @@ class Backtester:
                  initial_capital: float = 100000.0,
                  commission: float = 0.001,  # 0.1% commission
                  slippage: float = 0.001,    # 0.1% slippage
-                 data_directory: str = 'backtest_data'):
+                 data_directory: str = 'backtest_data',
+                 data_fetcher=None):
+        self.logger = logging.getLogger("Backtester")
+        self.data_fetcher = data_fetcher or DataFetcher()
         self.initial_capital = initial_capital
         self.commission = commission
         self.slippage = slippage
@@ -187,15 +234,20 @@ class Backtester:
         # Initialize data fetcher and storage
         self.data_fetcher = DataFetcher()
         self.storage = Storage()
+        
+        # Initialize data cache
+        self.data_cache = {}  # Cache for historical data {(symbol, start_date_str, end_date_str): data_df}
     
-    def run_backtest(self,
-                    agent: Union[StocksAgent, OptionsAgent, CryptoAgent],
+    def run_backtest(self, 
+                    agent,
                     symbols: List[str],
                     start_date: Union[str, datetime],
                     end_date: Union[str, datetime],
                     timeframe: str = 'day',
                     risk_manager: Optional[AdvancedRiskManager] = None,
-                    strategy_name: Optional[str] = None) -> BacktestResult:
+                    strategy_name: Optional[str] = None,
+                    initial_capital: float = None,
+                    benchmark_symbol: str = 'SPY') -> Optional[BacktestResult]:
         """
         Run backtest for a given agent and symbols
         
@@ -207,6 +259,8 @@ class Backtester:
             timeframe: Data timeframe ('day', 'hour', '15min', etc.)
             risk_manager: Optional risk manager
             strategy_name: Name of the strategy
+            initial_capital: Initial capital for backtest
+            benchmark_symbol: Symbol for benchmark comparison (default: SPY)
             
         Returns:
             BacktestResult object with backtest results
@@ -235,14 +289,27 @@ class Backtester:
             self.logger.error("No data available for backtest")
             return None
         
+        # Use provided initial_capital if specified, otherwise use class default
+        if initial_capital is not None:
+            self.initial_capital = float(initial_capital)  # Ensure it's a float
+            self.logger.info(f"Using provided initial capital: ${self.initial_capital}")
+        
         # Initialize portfolio
+        if initial_capital is None:
+            initial_capital = self.initial_capital
+        
         portfolio = {
-            'cash': self.initial_capital,
-            'positions': {},
-            'equity': self.initial_capital,
-            'peak_equity': self.initial_capital,
-            'drawdown': 0.0
+            'cash': initial_capital,
+            'positions': {}  # Format: {symbol: {'quantity': qty, 'avg_price': price}}
         }
+        
+        # Fetch benchmark data
+        benchmark_data = None
+        try:
+            benchmark_data = self._fetch_historical_data(benchmark_symbol, start_date, end_date, timeframe)
+            self.logger.info(f"Fetched benchmark data for {benchmark_symbol}, shape: {benchmark_data.shape if benchmark_data is not None else 'None'}")
+        except Exception as e:
+            self.logger.warning(f"Failed to fetch benchmark data: {str(e)}")
         
         # Store data for later reference
         self.data = data
@@ -281,14 +348,37 @@ class Backtester:
                     # Prepare data for agent
                     symbol_data = self._prepare_data_for_agent(data[symbol], date, agent)
                     
+                    # Ensure symbol is in the data
+                    if 'symbol' not in symbol_data:
+                        symbol_data['symbol'] = symbol
+                    
                     # Generate signal
                     signal = agent.generate_signals(symbol_data)
                     
+                    # Ensure signal has the symbol
+                    if signal and 'symbol' not in signal:
+                        signal['symbol'] = symbol
+                    
+                    # Debug log the signal
+                    self.logger.info(f"Signal for {symbol} on {date.strftime('%Y-%m-%d')}: {signal.get('action', 'none')} with strength {signal.get('net_strength', 0)}")
+                    
                     # Execute signal if it's a buy or sell
                     if signal.get('action') in ['buy', 'sell']:
+                        # Make sure symbol is in the signal
+                        if 'symbol' not in signal:
+                            signal['symbol'] = symbol
+                            
+                        # Force a minimum quantity if not specified
+                        if signal.get('qty', 0) <= 0:
+                            signal['qty'] = 10  # Default to 10 shares
+                            self.logger.info(f"Setting default quantity of 10 for {symbol}")
+                            
                         trade = self._execute_trade(portfolio, signal, data[symbol].loc[date], date)
                         if trade:
                             trades.append(trade)
+                            self.logger.info(f"Trade executed: {trade['action']} {trade['quantity']} {symbol} at ${trade['price']:.2f}")
+                        else:
+                            self.logger.warning(f"Trade execution failed for {symbol}")
             
             # Record equity curve
             equity = self._calculate_equity(portfolio, data, date)
@@ -312,15 +402,24 @@ class Backtester:
         # Calculate performance metrics
         metrics = self._calculate_metrics(equity_curve, trades)
         
-        # Create and return backtest result
+        # Add benchmark comparison if available
+        if benchmark_data is not None:
+            try:
+                benchmark_metrics = self._calculate_benchmark_comparison(equity_curve, benchmark_data, dates)
+                metrics.update(benchmark_metrics)
+            except Exception as e:
+                self.logger.error(f"Error calculating benchmark comparison: {str(e)}")
+        
+        # Create and return result object
         result = BacktestResult(
-            strategy_name=strategy_name,
-            start_date=start_date,
-            end_date=end_date,
-            initial_capital=self.initial_capital,
+            strategy_name=strategy_name or f"{agent.__class__.__name__}_{','.join(symbols)}",
+            start_date=dates[0],
+            end_date=dates[-1],
+            initial_capital=initial_capital,
             trades=trades,
             equity_curve=equity_curve,
-            metrics=metrics
+            metrics=metrics,
+            benchmark_data=benchmark_data if benchmark_data is not None else None
         )
         
         self.logger.info(f"Backtest completed for {strategy_name}")
@@ -330,14 +429,28 @@ class Backtester:
         
         return result
     
-    def _fetch_historical_data(self, symbol: str, start_date: datetime, end_date: datetime, timeframe: str) -> pd.DataFrame:
-        """Fetch historical data for a symbol"""
-        # Check if we have cached data
+    def _fetch_historical_data(self, symbol: str, start_date: datetime, end_date: datetime, timeframe: str = 'day') -> pd.DataFrame:
+        """Fetch historical data for a symbol with caching"""
+        import pandas as pd
+        
+        # Convert dates to strings for cache keys
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+        
+        # Check in-memory cache first (fastest)
+        cache_key = (symbol, start_date_str, end_date_str, timeframe)
+        if cache_key in self.data_cache:
+            self.logger.info(f"Using in-memory cached data for {symbol} from {start_date_str} to {end_date_str}")
+            return self.data_cache[cache_key]
+        
+        # Check file cache next
         cache_file = os.path.join(self.data_directory, f"{symbol}_{timeframe}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.csv")
         
         if os.path.exists(cache_file):
-            self.logger.info(f"Loading cached data for {symbol} from {cache_file}")
+            self.logger.info(f"Loading file-cached data for {symbol} from {cache_file}")
             df = pd.read_csv(cache_file, index_col=0, parse_dates=True)
+            # Store in memory cache for future use
+            self.data_cache[cache_key] = df
             return df
         
         # Fetch data using DataFetcher
@@ -426,8 +539,11 @@ class Backtester:
                     self.logger.error(f"No date column found in data for {symbol}")
                     return None
             
-            # Save to cache
+            # Save to file cache
             df.to_csv(cache_file)
+            
+            # Save to in-memory cache
+            self.data_cache[(symbol, start_date_str, end_date_str, timeframe)] = df
             
             return df
             
@@ -435,69 +551,102 @@ class Backtester:
             self.logger.error(f"Error fetching data for {symbol}: {str(e)}")
             return None
     
-    def _prepare_data_for_agent(self, df: pd.DataFrame, date: pd.Timestamp, agent) -> Dict[str, Any]:
-        """Prepare data for agent based on agent type"""
-        # Get historical data up to current date
-        hist_data = df[df.index <= date].copy()
-        
-        # Map column names - handle both lowercase and capitalized column names
-        column_mapping = {
-            'open': ['open', 'Open'],
-            'high': ['high', 'High'],
-            'low': ['low', 'Low'],
-            'close': ['close', 'Close'],
-            'volume': ['volume', 'Volume']
-        }
-        
-        # Create standardized data dictionary
-        data = {'symbol': df.name if hasattr(df, 'name') else 'UNKNOWN',
-                'date': date.strftime('%Y-%m-%d')}
-        
-        # Check if we have any data
-        if hist_data.empty:
-            self.logger.warning(f"No historical data available for date {date}")
-            return None
-        
-        # Add price data with column name flexibility
-        for target_col, possible_cols in column_mapping.items():
-            found = False
-            for col in possible_cols:
-                if col in hist_data.columns:
-                    data[target_col] = hist_data[col].values
-                    found = True
-                    break
-            if not found:
-                if target_col == 'volume':  # Volume can be optional
-                    data[target_col] = [1000000] * len(hist_data)  # Default volume
-                else:
-                    self.logger.warning(f"Missing required column {target_col} in data, using default values")
-                    # Use a default value to prevent crashes
-                    if target_col == 'open':
-                        data[target_col] = hist_data.iloc[:, 0].values  # Use first column
-                    elif target_col == 'high':
-                        data[target_col] = hist_data.iloc[:, 0].values * 1.01  # 1% higher
-                    elif target_col == 'low':
-                        data[target_col] = hist_data.iloc[:, 0].values * 0.99  # 1% lower
-                    elif target_col == 'close':
-                        data[target_col] = hist_data.iloc[:, 0].values  # Use first column
+    def _prepare_data_for_agent(self, hist_data: pd.DataFrame, date: pd.Timestamp, agent) -> Dict[str, Any]:
+        """Prepare data in the format expected by the agent"""
+        try:
+            # Get data up to the current date - handle potential indexing errors
+            if date in hist_data.index:
+                # Use the safe approach to get data up to a specific date
+                mask = hist_data.index <= date
+                hist_data = hist_data[mask].copy()
+            else:
+                # If date is not in index, take all data (should never happen)
+                hist_data = hist_data.copy()
+            
+            # Check if we have any data
+            if hist_data.empty:
+                self.logger.warning(f"No historical data available for date {date}")
+                return None
+            
+            # Create standardized data dictionary with metadata
+            data = {'symbol': hist_data.name if hasattr(hist_data, 'name') else 'UNKNOWN',
+                    'date': date.strftime('%Y-%m-%d')}
+            
+            # Add agent_type information based on the agent class or run parameters
+            if hasattr(agent, '__class__') and hasattr(agent.__class__, '__name__'):
+                agent_class_name = agent.__class__.__name__
+                if agent_class_name == 'StocksAgent':
+                    data['agent_type'] = 'value_agent'  # Default for backward compatibility
+                elif agent_class_name == 'CryptoAgent':
+                    data['agent_type'] = 'trend_agent'  # Default for trend agent
+            
+            # Log the data preparation for debugging
+            self.logger.info(f"Preparing data for {data.get('symbol', 'unknown')} with agent type {data.get('agent_type', 'unknown')}")
+            
+            # Define column mapping for flexibility in data source column names
+            column_mapping = {
+                'open': ['open', 'Open'],
+                'high': ['high', 'High'],
+                'low': ['low', 'Low'],
+                'close': ['close', 'Close'],
+                'volume': ['volume', 'Volume']
+            }
+            
+            # Add price data with column name flexibility
+            for target_col, possible_cols in column_mapping.items():
+                found = False
+                for col in possible_cols:
+                    if col in hist_data.columns:
+                        data[target_col] = hist_data[col].values
+                        found = True
+                        break
+                if not found:
+                    if target_col == 'volume':  # Volume can be optional
+                        data[target_col] = [1000000] * len(hist_data)  # Default volume
                     else:
-                        data[target_col] = [0] * len(hist_data)
-        
-        # Specific data for options agent
-        if isinstance(agent, OptionsAgent):
-            # For options, we need to add option-specific data
-            # In a real scenario, this would come from options data
-            # Here we'll use some mock values
-            current_price = hist_data['close'].iloc[-1]
-            data.update({
-                'S': current_price,  # Underlying price
-                'K': current_price * 1.05,  # Strike price (5% OTM)
-                'T': 30/365,  # 30 days to expiration
-                'r': 0.02,  # 2% risk-free rate
-                'sigma': 0.3,  # 30% volatility
-                'option_type': 'call',
-                'option_price': current_price * 0.05  # Rough estimate
-            })
+                        self.logger.warning(f"Missing required column {target_col} in data, using default values")
+                        # Use a default value to prevent crashes
+                        if target_col == 'open':
+                            data[target_col] = hist_data.iloc[:, 0].values  # Use first column
+                        elif target_col == 'high':
+                            data[target_col] = hist_data.iloc[:, 0].values * 1.01  # 1% higher
+                        elif target_col == 'low':
+                            data[target_col] = hist_data.iloc[:, 0].values * 0.99  # 1% lower
+                        elif target_col == 'close':
+                            data[target_col] = hist_data.iloc[:, 0].values  # Use first column
+                        else:
+                            data[target_col] = [0] * len(hist_data)
+            
+            # Specific data for options agent
+            if isinstance(agent, OptionsAgent):
+                # For options, we need to add option-specific data
+                # In a real scenario, this would come from options data
+                # Here we'll use some mock values
+                current_price = hist_data['close'].iloc[-1]
+                data.update({
+                    'S': current_price,  # Underlying price
+                    'K': current_price * 1.05,  # Strike price (5% OTM)
+                    'T': 30/365,  # 30 days to expiration
+                    'r': 0.02,  # 2% risk-free rate
+                    'sigma': 0.3,  # 30% volatility
+                    'option_type': 'call',
+                    'option_price': current_price * 0.05  # Rough estimate
+                })
+                
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing data for agent: {str(e)}")
+            # Create a minimal data structure to prevent crashes
+            return {
+                'symbol': hist_data.name if hasattr(hist_data, 'name') else 'UNKNOWN',
+                'date': date.strftime('%Y-%m-%d'),
+                'close': [100.0],  # Placeholder data
+                'open': [100.0],
+                'high': [101.0],
+                'low': [99.0],
+                'volume': [1000000]
+            }
         
         return data
     
@@ -513,10 +662,15 @@ class Backtester:
     def _execute_trade(self, portfolio: Dict[str, Any], signal: Dict[str, Any], price_data: pd.Series, date: pd.Timestamp) -> Dict[str, Any]:
         """Execute a trade based on a signal"""
         action = signal.get('action')
-        symbol = signal.get('symbol', 'UNKNOWN')
+        symbol = signal.get('symbol')
         quantity = signal.get('qty', 0)
         
-        if quantity <= 0:
+        # Log the signal for debugging
+        self.logger.info(f"Processing signal: {action} {quantity} {symbol} at {date}")
+        self.logger.info(f"Signal details: {signal}")
+        
+        if not action or not symbol or quantity <= 0:
+            self.logger.warning(f"Invalid trade parameters: action={action}, symbol={symbol}, quantity={quantity}")
             return None
         
         # Get current price with slippage
@@ -637,6 +791,84 @@ class Backtester:
             equity += position['market_value']
         
         return equity
+    
+    def _calculate_benchmark_comparison(self, equity_curve: List[Dict[str, Any]], benchmark_data: pd.DataFrame, dates: List[pd.Timestamp]) -> Dict[str, Any]:
+        """Calculate performance metrics compared to benchmark"""
+        benchmark_metrics = {}
+        
+        try:
+            # Convert equity curve to DataFrame
+            df = pd.DataFrame(equity_curve)
+            df['date'] = pd.to_datetime(df['date'])
+            df.set_index('date', inplace=True)
+            
+            # Prepare benchmark data
+            benchmark_df = benchmark_data.copy()
+            
+            # Ensure we only use benchmark data from the backtest period
+            benchmark_df = benchmark_df.loc[benchmark_df.index >= dates[0]]
+            benchmark_df = benchmark_df.loc[benchmark_df.index <= dates[-1]]
+            
+            if not benchmark_df.empty and 'close' in benchmark_df.columns:
+                # Calculate benchmark performance
+                benchmark_returns = benchmark_df['close'].pct_change().dropna()
+                strategy_returns = df['equity'].pct_change().dropna()
+                
+                # Convert benchmark returns to DatetimeIndex if it's not already
+                if not isinstance(benchmark_returns.index, pd.DatetimeIndex):
+                    benchmark_returns.index = pd.to_datetime(benchmark_returns.index)
+                
+                # Align strategy and benchmark returns
+                common_dates = strategy_returns.index.intersection(benchmark_returns.index)
+                if len(common_dates) > 0:
+                    # Calculate metrics
+                    strategy_returns_aligned = strategy_returns.loc[common_dates]
+                    benchmark_returns_aligned = benchmark_returns.loc[common_dates]
+                    
+                    # Calculate benchmark total return
+                    benchmark_total_return = (benchmark_df['close'].iloc[-1] / benchmark_df['close'].iloc[0]) - 1
+                    
+                    # Calculate alpha and beta
+                    # Beta = Covariance(Strategy, Benchmark) / Variance(Benchmark)
+                    # Alpha = Strategy Return - (Risk Free Rate + Beta * (Benchmark Return - Risk Free Rate))
+                    # For simplicity, assume risk-free rate is 0
+                    covariance = np.cov(strategy_returns_aligned, benchmark_returns_aligned)[0, 1]
+                    benchmark_variance = np.var(benchmark_returns_aligned)
+                    beta = covariance / benchmark_variance if benchmark_variance > 0 else 0
+                    
+                    # Calculate annualized returns
+                    days = (df.index[-1] - df.index[0]).days
+                    if days > 0:
+                        strategy_annual_return = (1 + (df['equity'].iloc[-1] / df['equity'].iloc[0] - 1)) ** (365 / days) - 1
+                        benchmark_annual_return = (1 + benchmark_total_return) ** (365 / days) - 1
+                        alpha = strategy_annual_return - (beta * benchmark_annual_return)
+                    else:
+                        alpha = 0
+                        strategy_annual_return = 0
+                        benchmark_annual_return = 0
+                    
+                    # Tracking error (standard deviation of excess returns)
+                    excess_returns = strategy_returns_aligned - benchmark_returns_aligned
+                    tracking_error = np.std(excess_returns) * np.sqrt(252)  # Annualized
+                    
+                    # Information ratio
+                    information_ratio = (strategy_annual_return - benchmark_annual_return) / tracking_error if tracking_error > 0 else 0
+                    
+                    # Store metrics
+                    benchmark_metrics = {
+                        'benchmark_total_return': benchmark_total_return,
+                        'benchmark_annual_return': benchmark_annual_return,
+                        'alpha': alpha,
+                        'beta': beta,
+                        'tracking_error': tracking_error,
+                        'information_ratio': information_ratio,
+                        'excess_return': strategy_annual_return - benchmark_annual_return
+                    }
+        
+        except Exception as e:
+            self.logger.error(f"Error calculating benchmark metrics: {str(e)}")
+        
+        return benchmark_metrics
     
     def _calculate_metrics(self, equity_curve: List[Dict[str, Any]], trades: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Calculate performance metrics"""

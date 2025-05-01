@@ -16,6 +16,7 @@ This platform leverages AI-powered, multi-agent architecture for automated tradi
 - **Crypto Agent:** Executes trades based on technical and sentiment analysis.
 - **Risk Agent:** Monitors drawdowns, volatility, and enforces trade thresholds.
 - **Trading Executor:** Executes trade signals from Alpaca and Robinhood.
+- **Customizable Agent:** Allows users to create and deploy trading strategies with configurable parameters and weight-based signal aggregation.
 
 #### 2.2 Technical Indicators for Agents
 - **Stocks & Crypto Agents:**
@@ -37,6 +38,9 @@ This platform leverages AI-powered, multi-agent architecture for automated tradi
 - Trailing stop-loss
 - Real-time position sizing adjustments
 - Automated trade halting upon risk threshold breach
+- Parameter-driven position sizing based on signal strength
+- Customizable take-profit and trailing-stop settings
+- Benchmark tracking and performance attribution against S&P 500 (SPY)
 
 ---
 
@@ -45,12 +49,17 @@ This platform leverages AI-powered, multi-agent architecture for automated tradi
 #### 3.1 Portfolio Overview
 - Portfolio value, cash available, daily P/L (percentage and amount)
 - Real-time asset allocation pie chart
+- One-click refresh for portfolio data
+- Saved strategies management and deployment
 
 #### 3.2 Detailed Visualizations
 - Interactive charts:
   - Portfolio historical performance
   - Daily/monthly P/L
   - Drawdown analysis
+  - Benchmark comparison against SPY
+  - Excess return visualization
+  - Performance attribution metrics (alpha, beta, Sharpe ratio)
 
 #### 3.3 Asset Management Interface
 - Positions table per asset type (stocks, options, crypto)
@@ -59,6 +68,9 @@ This platform leverages AI-powered, multi-agent architecture for automated tradi
 #### 3.4 Trading Signals & Recommendations
 - List of AI-generated trading signals
 - Signal entry/exit points and rationale
+- Strategy repository for saving and loading backtested strategies
+- One-click deployment of strategies to live trading
+- Customizable strategy parameters via intuitive UI controls
 
 ---
 
@@ -112,6 +124,9 @@ This platform leverages AI-powered, multi-agent architecture for automated tradi
 ### 7. Performance & Scalability
 - Optimized for lightweight local deployment
 - Easily scalable to dedicated server infrastructure
+- Containerized deployment with Docker for consistency across environments
+- Fast rebuild and restart capabilities (`./run_docker.sh --rebuild`)
+- Strategy persistence for production deployment
 
 ---
 
@@ -128,14 +143,31 @@ This platform leverages AI-powered, multi-agent architecture for automated tradi
 ---
 
 ### 10. Detailed Implementation Roadmap
-- **Phase 1:** Basic agent setup and integration with Lumibot and trading APIs
-- **Phase 2:** Gradio-based visualization, initial MCP integration
-- **Phase 3:** Discord notifications and advanced risk management
-- **Phase 4:** Full MCP integration, AI-driven analytics, production scalability
+- **Phase 1:** Basic agent setup and integration with Lumibot and trading APIs ✓
+- **Phase 2:** Gradio-based visualization, initial MCP integration ✓
+- **Phase 3:** Robust backtesting with benchmark comparison ✓
+- **Phase 4:** Strategy repository and live trading deployment ✓
+- **Phase 5:** Discord notifications and advanced risk management
+- **Phase 6:** Full MCP integration, AI-driven analytics, production scalability
 
 ---
 
-### 11. Technical Indicator Implementation Instructions
+### 11. Backtesting & Strategy Management
+
+#### Backtesting System
+- SPY benchmark comparison with excess return analysis
+- Strategy performance metrics (Sharpe ratio, win rate, alpha, beta)
+- Interactive visualization with drawdown analysis
+- Customizable parameters and strategy weights
+- High-quality data sources with automatic fallback mechanisms
+
+#### Strategy Repository
+- Save successful strategies for future use
+- Deploy backtested strategies directly to live trading
+- View and compare strategy performance metrics
+- Support for multiple brokers (paper, Alpaca, Robinhood)
+
+### 12. Technical Indicator Implementation Instructions
 
 #### Moving Averages (MA, EMA, SMA)
 - Use standard periods (e.g., 20, 50, 200) for trend identification.

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ui.gradio_ui import launch_gradio
 from ui.schemas import router as agent_router
+from ui.portfolio_api import router as portfolio_router
 
 app = FastAPI()
 
@@ -15,6 +16,7 @@ app.add_middleware(
 )
 
 app.include_router(agent_router)
+app.include_router(portfolio_router)
 
 # We don't need to launch Gradio from here anymore
 # The Gradio UI is now launched independently in its own container
