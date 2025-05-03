@@ -205,7 +205,7 @@ def run_backtest(agent_type, symbols, start_date, end_date, initial_capital, con
                 return metrics_table, plot, criteria_md, results_with_sources
             except json.JSONDecodeError as je:
                 logger.error(f"JSON decode error: {je}, Response content: {response.text}")
-                return [], None, f"Error decoding response: {response.text}", {}
+                return [], None, f"Error decoding response: {response.text}", ""
         else:
             error_msg = f"Error: {response.status_code}"
             try:
@@ -214,10 +214,10 @@ def run_backtest(agent_type, symbols, start_date, end_date, initial_capital, con
                 error_msg += f" - {error_detail}"
             except:
                 pass
-            return [], None, error_msg, {}
+            return [], None, error_msg
     except Exception as e:
         logger.error(f"Error running backtest: {e}")
-        return [], None, f"Error: {str(e)}", {}
+        return [], None, f"Error: {str(e)}"
 
 def plot_backtest_results(results):
     """Create a simplified plotly figure from backtest results"""
@@ -476,7 +476,7 @@ def run_portfolio_backtest(allocations, symbol_strategies, start_date, end_date,
                 return metrics_table, plot, json.dumps(results, indent=2), insights
             except json.JSONDecodeError as je:
                 logger.error(f"JSON decode error: {je}, Response content: {response.text}")
-                return [], None, f"Error decoding response: {response.text}", {}
+                return [], None, f"Error decoding response: {response.text}", ""
         else:
             error_msg = f"Error: {response.status_code}"
             try:
@@ -486,10 +486,10 @@ def run_portfolio_backtest(allocations, symbol_strategies, start_date, end_date,
                 error_msg += f" - {response.text}"
             
             logger.error(error_msg)
-            return [], None, error_msg, {}, ""
+            return [], None, error_msg, ""
     except Exception as e:
         logger.error(f"Error running portfolio backtest: {e}")
-        return [], None, f"Error: {str(e)}", {}, ""
+        return [], None, f"Error: {str(e)}", ""
 
 def plot_portfolio_results(results):
     """Create a plotly figure from portfolio backtest results"""

@@ -36,6 +36,13 @@ while [[ $# -gt 0 ]]; do
     --rebuild)
       echo "Rebuilding all containers..."
       docker-compose down
+      docker-compose build 
+      COMMAND="up -d"
+      shift
+      ;;
+    --full-rebuild)
+      echo "Rebuilding all containers..."
+      docker-compose down
       docker-compose build --no-cache
       COMMAND="up -d"
       shift

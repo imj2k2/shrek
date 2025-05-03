@@ -6,7 +6,7 @@ class CryptoAgent:
     def generate_signals(self, data):
         close = data['close']
         signals = {}
-        signals['macd'], _, _ = macd.macd(close)
+        signals['macd'], _, _ = macd(close)
         signals['vwap'] = vwap.vwap(data['high'], data['low'], data['close'], data['volume']).iloc[-1]
         signals['rsi'] = rsi.rsi(close).iloc[-1]
         signals['bollinger_upper'], signals['bollinger_mid'], signals['bollinger_lower'] = bollinger.bollinger_bands(close)

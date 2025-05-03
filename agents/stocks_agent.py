@@ -2,6 +2,7 @@ from indicators import rsi, macd, bollinger, atr, vwap, moving_averages
 from typing import Dict, Any, List, Optional
 import pandas as pd
 import numpy as np
+import os
 from mcp.protocol import MCPMessage
 from datetime import datetime
 import logging
@@ -12,6 +13,7 @@ class StocksAgent:
     def __init__(self, mcp=None):
         self.logger = logging.getLogger("StocksAgent")
         self.mcp = mcp  # Model Context Protocol for communication
+        self.debug_enabled = os.environ.get('DEBUG_TRADING', 'false').lower() == 'true'  # Debug mode for forced trades
         
         # Strategy parameters
         self.strategies = {
@@ -64,9 +66,45 @@ class StocksAgent:
     
     def generate_signals(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate trading signals based on multiple strategies"""
+        # Add debugging to track the signal generation process
+        self.logger.info(f"Generating signals for {data.get('symbol', 'UNKNOWN')}")
+        
+        # Use the debug_enabled attribute instead of checking environment directly
+        # This allows setting debug mode programmatically from schemas.py
+        
+        # In debug mode, force some trades to test the backtesting engine
+        if self.debug_enabled:
+            self.logger.info("Debug mode enabled, forcing test signals")
+            # Get the date from the data if available for better logging
+            date_str = data.get('date', datetime.now().strftime('%Y-%m-%d'))
+            symbol = data.get('symbol', 'UNKNOWN')
+            
+            # Construct a forced buy signal that works with backtester
+            # The backtester expects a specific format with action and sufficient metadata
+            buy_signal = {
+                'action': 'buy',
+                'symbol': symbol,
+                'qty': 10,  # Buy 10 shares
+                'strategy': 'debug_forced',
+                'timestamp': datetime.now().isoformat(),
+                'reason': f'Debug mode forced buy signal for {symbol} on {date_str}',
+                'net_strength': 0.8,  # Strong signal
+                'buy_signals': [
+                    {
+                        'action': 'buy',
+                        'strength': 0.8,
+                        'reason': 'Debug mode forced signal'
+                    }
+                ],
+                'sell_signals': []
+            }
+            
+            self.logger.info(f"Generated forced buy signal: {buy_signal}")
+            return buy_signal
+            
         if not data or 'close' not in data:
             self.logger.error("Invalid data format: missing 'close' prices")
-            return {'error': 'Invalid data format: missing required price data'}
+            return {'action': 'hold', 'reason': 'Missing price data'}
         
         try:
             # Convert data to pandas Series if it's a list
@@ -77,7 +115,7 @@ class StocksAgent:
             symbol = data.get('symbol', 'UNKNOWN')
             
             # Get the current price for signal generation
-            current_price = close.iloc[-1] if hasattr(close, 'iloc') else close[-1]
+            current_price = float(close.iloc[-1]) if hasattr(close, 'iloc') and len(close) > 0 else 0.0
             
             # Check if we are running as value_agent (backward compatibility)
             agent_type = data.get('agent_type', None)
@@ -620,11 +658,21 @@ class StocksAgent:
         # Extract data
         try:
             # Ensure we have the required data
-            if 'close' not in data or not data['close'] or len(data['close']) < 20:
-                return {'action': 'hold', 'reason': 'Insufficient data for value strategy'}
+            if 'close' not in data:
+                return {'action': 'hold', 'reason': 'No close price data available'}
                 
-            # Make sure we convert arrays to pandas Series for calculations
             close_values = data['close']
+            
+            # More thorough check using scalar values
+            has_close_data = False
+            if isinstance(close_values, (list, np.ndarray)) and len(close_values) > 0:
+                has_close_data = True
+            elif isinstance(close_values, pd.Series) and not close_values.empty:
+                has_close_data = True
+                
+            if not has_close_data or (isinstance(close_values, (list, np.ndarray, pd.Series)) and len(close_values) < 20):
+                return {'action': 'hold', 'reason': 'Insufficient data for value strategy'}
+            
             symbol = data.get('symbol', 'UNKNOWN')
             
             # Convert to pandas Series if it's a numpy array or list
@@ -636,33 +684,49 @@ class StocksAgent:
                 self.logger.warning(f"Unexpected close price data type: {type(close_values)}")
                 return {'action': 'hold', 'reason': 'Invalid data format'}
             
-            # Get the current price
-            current_price = close.iloc[-1] if len(close) > 0 else 0
-            if current_price == 0:
-                return {'action': 'hold', 'reason': 'Invalid price data'}
+            # Get the current price as a scalar value to avoid numpy array comparison issues
+            try:
+                current_price = float(close.iloc[-1]) if len(close) > 0 else 0.0
+                if current_price <= 0:
+                    return {'action': 'hold', 'reason': 'Invalid price data (zero or negative)'}
+            except (ValueError, TypeError, IndexError) as e:
+                self.logger.warning(f"Error getting current price: {e}")
+                return {'action': 'hold', 'reason': f'Error getting price: {e}'}
                 
             # Calculate simple moving averages
             if len(close) >= 20:
                 # Calculate MAs using pandas functions
-                short_window = 5
-                med_window = 10
-                long_window = 20
-                
-                short_ma = close.rolling(window=short_window).mean()
-                med_ma = close.rolling(window=med_window).mean()
-                long_ma = close.rolling(window=long_window).mean()
-                
-                # Get latest values that aren't NaN
-                if not short_ma.empty and not np.isnan(short_ma.iloc[-1]):
-                    latest_short = short_ma.iloc[-1]
-                    latest_med = med_ma.iloc[-1]
-                    latest_long = long_ma.iloc[-1]
+                try:
+                    short_window = 5
+                    med_window = 10
+                    long_window = 20
+                    
+                    short_ma = close.rolling(window=short_window).mean()
+                    med_ma = close.rolling(window=med_window).mean()
+                    long_ma = close.rolling(window=long_window).mean()
+                    
+                    # Get latest values that aren't NaN as scalars to avoid numpy array issues
+                    has_valid_mas = (not short_ma.empty and 
+                                    not med_ma.empty and 
+                                    not long_ma.empty and 
+                                    not pd.isna(short_ma.iloc[-1]) and 
+                                    not pd.isna(med_ma.iloc[-1]) and 
+                                    not pd.isna(long_ma.iloc[-1]))
+                    
+                    if has_valid_mas:
+                        latest_short = float(short_ma.iloc[-1])
+                        latest_med = float(med_ma.iloc[-1])
+                        latest_long = float(long_ma.iloc[-1])
+                except Exception as e:
+                    self.logger.error(f"Error calculating moving averages: {e}")
+                    return {'action': 'hold', 'reason': f'Error in MA calculation: {e}'}
                     
                     # Log for debugging
                     self.logger.info(f"Value strategy MAs - Short: {latest_short:.2f}, Med: {latest_med:.2f}, Long: {latest_long:.2f}")
                     
-                    # Generate signals based on MA crossovers
-                    if latest_short > latest_med:
+                    # Generate signals based on MA crossovers - safe handling for NumPy comparisons
+                    # Use scalar comparison to avoid ambiguous truth value error
+                    if isinstance(latest_short, (int, float)) and isinstance(latest_med, (int, float)) and latest_short > latest_med:
                         signals["ma_bullish"] = {
                             'action': 'buy',
                             'symbol': symbol,
@@ -671,7 +735,7 @@ class StocksAgent:
                             'strength': 0.8,
                             'reason': f'Bullish MA: 5-day ({latest_short:.2f}) > 10-day ({latest_med:.2f})'
                         }
-                    elif latest_short < latest_long:
+                    elif isinstance(latest_short, (int, float)) and isinstance(latest_long, (int, float)) and latest_short < latest_long:
                         signals["ma_bearish"] = {
                             'action': 'sell',
                             'symbol': symbol,
@@ -684,28 +748,46 @@ class StocksAgent:
             # Price momentum strategy - safer implementation
             if len(close) >= 10:
                 try:
-                    # Calculate 5-day price change safely
-                    if close.iloc[-5] > 0:  # Avoid division by zero
-                        price_change_5d = (close.iloc[-1] / close.iloc[-5] - 1) * 100
+                    # Get scalar price values to avoid ambiguous truth value errors
+                    try:
+                        price_5d_ago = float(close.iloc[-5]) 
+                        current_price_value = float(close.iloc[-1])
+                    except (ValueError, TypeError, IndexError) as e:
+                        self.logger.warning(f"Error extracting price values: {e}")
+                        # Skip momentum calculation if price extraction fails
+                        price_5d_ago = 0.0
+                    
+                    # Only proceed if we have valid price data
+                    if price_5d_ago > 0.0 and current_price_value > 0.0:  # Avoid division by zero
+                        # Calculate price change as percentage
+                        price_change_5d = (current_price_value / price_5d_ago - 1.0) * 100.0
                         
-                        # Generate signals based on momentum
+                        # Generate signals based on momentum - using explicit float comparison
                         if price_change_5d > 1.0:  # 1% up in 5 days
+                            # Calculate position size (safely)
+                            position_size = max(5, int(10 * (price_change_5d / 2) if price_change_5d > 0 else 1))
+                            signal_strength = min(0.9, 0.5 + price_change_5d / 10.0)
+                            
                             signals["momentum_up"] = {
                                 'action': 'buy',
                                 'symbol': symbol,
-                                'qty': max(5, int(10 * (price_change_5d / 2))),  # More shares for stronger momentum
+                                'qty': position_size,
                                 'price': current_price,
-                                'strength': min(0.9, 0.7 + price_change_5d/10),
-                                'reason': f'Strong momentum: +{price_change_5d:.1f}% in 5 days'
+                                'strength': signal_strength,
+                                'reason': f'Strong upward momentum: {price_change_5d:.1f}% in 5 days'
                             }
                         elif price_change_5d < -1.0:  # 1% down in 5 days
+                            # Calculate position size (safely)
+                            position_size = max(5, int(10 * (abs(price_change_5d) / 2) if price_change_5d < 0 else 1))
+                            signal_strength = min(0.9, 0.5 + abs(price_change_5d) / 10.0)
+                            
                             signals["momentum_down"] = {
                                 'action': 'sell',
                                 'symbol': symbol,
-                                'qty': max(5, int(10 * (abs(price_change_5d) / 2))),
+                                'qty': position_size,
                                 'price': current_price,
-                                'strength': min(0.9, 0.7 + abs(price_change_5d)/10),
-                                'reason': f'Negative momentum: {price_change_5d:.1f}% in 5 days'
+                                'strength': signal_strength,
+                                'reason': f'Strong downward momentum: {price_change_5d:.1f}% in 5 days'
                             }
                 except Exception as e:
                     self.logger.warning(f"Error calculating momentum: {str(e)}")

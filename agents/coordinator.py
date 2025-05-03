@@ -37,7 +37,7 @@ class CryptoAgent:
     def generate_signals(self, data):
         # Example: use MACD and VWAP
         close = data['close']
-        macd_line, signal_line, hist = macd.macd(close)
+        macd_line, signal_line, hist = macd(close)
         vwap_val = vwap.vwap(data['high'], data['low'], data['close'], data['volume'])
         return {'macd': macd_line.iloc[-1], 'vwap': vwap_val.iloc[-1]}
 

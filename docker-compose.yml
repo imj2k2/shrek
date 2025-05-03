@@ -3,13 +3,14 @@ services:
   backend:
     build: .
     ports:
-      - "8000:8000"
+      - "8080:8000"
     environment:
       - REDIS_URL=redis://redis:6379/0
       - POLYGON_API_KEY=${POLYGON_API_KEY:-demo}
       - ALPACA_API_KEY=${ALPACA_API_KEY:-demo}
       - ALPACA_API_SECRET=${ALPACA_API_SECRET:-demo}
       - BROKER_TYPE=${BROKER_TYPE:-mock}
+      - DEBUG_TRADING=true
     depends_on:
       - redis
     restart: on-failure

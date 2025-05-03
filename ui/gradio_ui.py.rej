@@ -1,0 +1,20 @@
+@@ -204,16 +204,16 @@
+                 return metrics_table, plot, criteria_md, results_with_sources
+             except json.JSONDecodeError as je:
+                 logger.error(f"JSON decode error: {je}, Response content: {response.text}")
+-                return [], None, f"Error decoding response: {response.text}", ""
++                return [], None, f"Error decoding response: {response.text}", {}
+         else:
+             error_msg = f"Error: {response.status_code}"
+             try:
+                 error_detail = response.json().get('detail', '')
+                 logger.error(f"Backtest API error: {error_detail}")
+                 error_msg += f" - {error_detail}"
+             except:
+                 pass
+-            return [], None, error_msg
++            return [], None, error_msg, {}
+     except Exception as e:
+         logger.error(f"Error running backtest: {e}")
+-        return [], None, f"Error: {str(e)}"
++        return [], None, f"Error: {str(e)}", {}
