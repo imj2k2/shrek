@@ -917,11 +917,7 @@ def create_ui():
                         save_strategy = gr.Checkbox(label="Save Strategy for Later Use", value=False)
                 
                 # Function to load screened symbols into backtest tab
-                def load_screened_symbols():
-                    global screened_symbols_for_backtest
-                    if not screened_symbols_for_backtest:
-                        return gr.update(value="No screened symbols available. Run the screener first."), ""  
-                    return gr.update(value="Loaded symbols from screener"), screened_symbols_for_backtest
+                # Using the imported load_screened_symbols function from ui.screener_functions
                 
                 # Wire up the load screened symbols button
                 load_screened_btn.click(
@@ -1519,6 +1515,7 @@ def create_ui():
                     outputs=[transfer_status]
                 )
             
+            # Saved Strategies Tab
             with gr.Tab("Saved Strategies"):
                 # Price criteria
                 with gr.Row():
@@ -1593,7 +1590,67 @@ def create_ui():
                     transfer_to_backtest_btn = gr.Button("Transfer to Backtest Tab", variant="secondary")
                     backtest_symbols_output = gr.Textbox(label="Symbols for Backtest", visible=False)
             
-            # Using the imported run_stock_screener function from ui.screener_functions
+            # Function to run the stock screener
+            def run_stock_screener(universe, min_price, max_price, min_volume, min_volatility, max_volatility,
+                                 min_rsi, max_rsi, price_above_sma50, price_below_sma50,
+                                 price_above_sma200, price_below_sma200, macd_positive, macd_negative,
+                                 sort_by, sort_ascending, max_results):
+                try:
+                    # Import the stock screener
+                    from screener.stock_screener import StockScreener
+                    import pandas as pd
+                    import logging
+                    
+                    logger = logging.getLogger(__name__)
+                    
+                    # Parse universe if provided
+                    universe_list = None
+                    if universe and universe.strip():
+                        universe_list = [s.strip() for s in universe.split(',')]
+                    
+                    # Create screener instance
+                    screener = StockScreener()
+                    
+                    # Apply filters
+                    results = screener.screen_stocks(
+                        universe=universe_list,
+                        min_price=min_price,
+                        max_price=max_price,
+                        min_volume=min_volume,
+                        min_volatility=min_volatility/100,  # Convert to decimal
+                        max_volatility=max_volatility/100,  # Convert to decimal
+                        min_rsi=min_rsi,
+                        max_rsi=max_rsi,
+                        price_above_sma50=price_above_sma50,
+                        price_below_sma50=price_below_sma50,
+                        price_above_sma200=price_above_sma200,
+                        price_below_sma200=price_below_sma200,
+                        macd_positive=macd_positive,
+                        macd_negative=macd_negative,
+                        sort_by=sort_by,
+                        ascending=sort_ascending,
+                        limit=max_results
+                    )
+                    
+                    if results.empty:
+                        logger.warning("No stocks matched the screening criteria")
+                        return pd.DataFrame()
+                    
+                    # Format results for display
+                    # Round numeric columns
+                    for col in results.select_dtypes(include=['float']).columns:
+                        if col in ['Daily_Change_%', 'Volatility_20d']:
+                            results[col] = results[col].round(2)
+                        else:
+                            results[col] = results[col].round(4)
+                    
+                    return results
+                    
+                except Exception as e:
+                    logger.error(f"Error running stock screener: {str(e)}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    return pd.DataFrame()
             
             # Using the imported add_stocks_to_backtest function from ui.screener_functions
             
@@ -1611,18 +1668,7 @@ def create_ui():
             
             # Using the imported prepare_for_backtest function from ui.screener_functions
             
-            # Function to transfer symbols to backtest tab
-            def transfer_to_backtest_tab(selected_stocks_df):
-                symbols_str = prepare_for_backtest(selected_stocks_df)
-                if not symbols_str:
-                    return gr.update(value="No stocks selected")
-                    
-                # Store the symbols string for later use
-                global screened_symbols_for_backtest
-                screened_symbols_for_backtest = symbols_str
-                
-                # Return a success message
-                return gr.update(value=f"Transferred {len(symbols_str.split(','))} stocks to backtest tab. Switch to Backtest tab to use them.")
+            # Using the imported transfer_to_backtest_tab function from ui.screener_functions
             
             # Wire up the buttons
             add_to_backtest_btn.click(
@@ -1892,99 +1938,7 @@ def create_ui():
                     deployment_status = gr.Textbox(label="Deployment Status", lines=3)
                     deployment_logs = gr.Textbox(label="Deployment Logs", lines=15)
             
-            # Function to deploy strategy to Alpaca
-            def deploy_to_alpaca(api_key, api_secret, paper_trading, strategy_type, 
-                               momentum_enabled, mean_reversion_enabled, breakout_enabled, volatility_enabled,
-                               momentum_weight, mean_reversion_weight, breakout_weight, volatility_weight,
-                               max_allocation, max_position_size, stop_loss, take_profit, trailing_stop, allow_short,
-                               symbols, load_from_backtest):
-                try:
-                    # Validate inputs
-                    if not api_key or not api_secret:
-                        return "Error: API Key and Secret are required", "Please provide valid Alpaca API credentials"
-                    
-                    if not symbols and not load_from_backtest:
-                        return "Error: No symbols specified", "Please provide at least one symbol to trade or load from backtest results"
-                    
-                    # Process symbols
-                    if load_from_backtest and screened_symbols_for_backtest:
-                        # Load symbols from backtest results
-                        symbol_list = []
-                        for symbol in screened_symbols_for_backtest.split(","):
-                            if ":short" in symbol:
-                                # Extract the base symbol without the position type
-                                base_symbol = symbol.split(":")[0]
-                                symbol_list.append((base_symbol, "short"))
-                            else:
-                                symbol_list.append((symbol, "long"))
-                        
-                        # Format for display
-                        symbol_display = ", ".join([f"{s[0]} ({s[1]})" for s in symbol_list])
-                        position_types = {s[0]: s[1] for s in symbol_list}
-                    else:
-                        # Process manually entered symbols
-                        symbol_list = [s.strip() for s in symbols.split(",")]
-                        symbol_display = ", ".join(symbol_list)
-                        position_types = {s: "long" for s in symbol_list}  # Default to long positions
-                    
-                    # Build strategy config
-                    strategy_config = {
-                        "type": strategy_type,
-                        "parameters": {
-                            "momentum_enabled": momentum_enabled,
-                            "mean_reversion_enabled": mean_reversion_enabled,
-                            "breakout_enabled": breakout_enabled,
-                            "volatility_enabled": volatility_enabled,
-                            "momentum_weight": momentum_weight,
-                            "mean_reversion_weight": mean_reversion_weight,
-                            "breakout_weight": breakout_weight,
-                            "volatility_weight": volatility_weight,
-                        },
-                        "risk_management": {
-                            "max_allocation": max_allocation,
-                            "max_position_size": max_position_size,
-                            "stop_loss": stop_loss,
-                            "take_profit": take_profit,
-                            "trailing_stop": trailing_stop,
-                            "allow_short": allow_short
-                        },
-                        "symbols": symbol_list if not load_from_backtest else [s[0] for s in symbol_list],
-                        "position_types": position_types if load_from_backtest else None,
-                        "paper_trading": paper_trading
-                    }
-                    
-                    # In a real implementation, this would call the Alpaca API
-                    # For now, we'll just simulate a successful deployment
-                    import json
-                    import time
-                    
-                    # Log the deployment details
-                    logs = f"Deploying strategy to Alpaca (Paper Trading: {paper_trading})\n"
-                    logs += f"Strategy Type: {strategy_type}\n"
-                    logs += f"Symbols: {symbol_display}\n"
-                    logs += f"Risk Management: Stop Loss {stop_loss*100}%, Take Profit {take_profit*100}%\n"
-                    logs += f"Max Allocation: {max_allocation*100}%, Max Position Size: {max_position_size*100}%\n"
-                    logs += f"Allow Short: {allow_short}\n\n"
-                    
-                    # Simulate API call
-                    logs += "Connecting to Alpaca API...\n"
-                    time.sleep(1)  # Simulate API latency
-                    logs += "Validating API credentials...\n"
-                    time.sleep(1)  # Simulate API latency
-                    logs += "Creating trading strategy...\n"
-                    time.sleep(1)  # Simulate API latency
-                    logs += "Setting up risk parameters...\n"
-                    time.sleep(1)  # Simulate API latency
-                    logs += "Deploying strategy to Alpaca...\n"
-                    time.sleep(1)  # Simulate API latency
-                    logs += "Strategy successfully deployed!\n"
-                    
-                    return "Success: Strategy deployed to Alpaca", logs
-                    
-                except Exception as e:
-                    import traceback
-                    error_details = traceback.format_exc()
-                    return f"Error: {str(e)}", error_details
+            # Using the imported deploy_to_alpaca function from ui.screener_functions
             
             # Wire up the deploy button
             deploy_btn.click(

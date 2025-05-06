@@ -704,18 +704,31 @@ class Backtester:
                 current_price = float(price_data['close'])
             elif isinstance(price_data, pd.Series) and 'close' in price_data.index:
                 current_price = float(price_data['close'])
+            elif isinstance(price_data, pd.Series) and len(price_data) > 0:
+                # If it's a Series but doesn't have 'close', try to get the first value
+                try:
+                    current_price = float(price_data.iloc[-1])  # Get the last value
+                except (IndexError, ValueError):
+                    current_price = float(price_data.iloc[0])  # Get the first value
             elif isinstance(price_data, pd.DataFrame) and 'close' in price_data.columns:
                 current_price = float(price_data['close'].iloc[-1])
+            elif isinstance(price_data, pd.DataFrame) and len(price_data.columns) > 0:
+                # If it's a DataFrame but doesn't have 'close', try the first numeric column
+                numeric_cols = price_data.select_dtypes(include=['number']).columns
+                if len(numeric_cols) > 0:
+                    current_price = float(price_data[numeric_cols[0]].iloc[-1])
+                else:
+                    raise ValueError("No numeric columns found in price data")
             elif 'price' in signal and signal['price'] is not None:
                 # Use price from signal if available
                 current_price = float(signal['price'])
             else:
-                # If we can't determine price, use a default price for testing
-                self.logger.warning(f"Could not determine price from data, using signal price or default")
-                current_price = float(signal.get('price', 100.0))
+                # If we can't determine price, use a symbol-specific default price
+                self.logger.warning(f"Could not determine price from data for {symbol}, using default")
+                current_price = self._get_default_symbol_price(symbol)
         except (KeyError, TypeError, ValueError) as e:
             self.logger.warning(f"Error getting price data: {e}. Using default price.")
-            current_price = 100.0  # Default price for testing
+            current_price = self._get_default_symbol_price(symbol)  # Use symbol-specific default price
             
         # Apply slippage
         if action == 'buy':
@@ -913,6 +926,26 @@ class Backtester:
         
         return benchmark_metrics
     
+    def _get_default_symbol_price(self, symbol: str) -> float:
+        """Get a default price for a symbol when actual price data is not available"""
+        # Common stock default prices
+        default_prices = {
+            'AAPL': 175.0,
+            'MSFT': 350.0,
+            'GOOG': 140.0,
+            'AMZN': 130.0,
+            'META': 300.0,
+            'TSLA': 250.0,
+            'NVDA': 450.0,
+            'SPY': 430.0,
+            'QQQ': 380.0,
+            'BTC': 35000.0,
+            'ETH': 2000.0,
+        }
+        
+        # Return the default price for the symbol if it exists, otherwise return 100.0
+        return default_prices.get(symbol, 100.0)
+        
     def _calculate_metrics(self, equity_curve: List[Dict[str, Any]], trades: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Calculate performance metrics"""
         if not equity_curve:

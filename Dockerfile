@@ -22,6 +22,9 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Install additional backtesting libraries
+RUN pip install --no-cache-dir backtrader==1.9.78.123
+
 # Set matplotlib to use Agg backend (non-GUI)
 ENV MPLBACKEND=Agg
 
@@ -29,7 +32,7 @@ ENV MPLBACKEND=Agg
 COPY . .
 
 # Create directories for data persistence
-RUN mkdir -p /app/data /app/backtest_results
+RUN mkdir -p /app/data /app/backtest_results /app/data/db
 
 # Expose ports for FastAPI and Gradio
 EXPOSE 8000 7860

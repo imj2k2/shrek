@@ -252,10 +252,21 @@ def run_backtest(request: BacktestRequest):
                 initial_capital=request.initial_capital
             )
             
-            # Add agent criteria to the result
-            result["agent_criteria"] = agent_criteria
+            # Convert BacktestResult object to dictionary for API response
+            result_dict = {
+                "strategy_name": result.strategy_name,
+                "start_date": result.start_date.strftime('%Y-%m-%d'),
+                "end_date": result.end_date.strftime('%Y-%m-%d'),
+                "initial_capital": result.initial_capital,
+                "trades": result.trades,
+                "equity_curve": result.equity_curve,
+                "metrics": result.metrics,
+                "data_sources": result.data_sources if hasattr(result, 'data_sources') else {},
+                # Add agent criteria
+                "agent_criteria": agent_criteria
+            }
             
-            if not result:
+            if not result_dict:
                 logging.error("Backtest returned no results")
                 return {"error": "Backtest returned no results", "status": "failed"}
         except Exception as e:
@@ -299,24 +310,9 @@ def run_backtest(request: BacktestRequest):
                 logging.error(f"Error saving strategy: {str(e)}")
                 # Continue execution even if strategy saving fails
         
-        # Serialize the result to a dict first
-        result_dict = {}
-        if hasattr(result, 'as_dict'):
-            result_dict = result.as_dict()
-        else:
-            # Manually create dict if as_dict not available
-            result_dict = {
-                'strategy_name': result.strategy_name,
-                'start_date': result.start_date.strftime('%Y-%m-%d') if hasattr(result, 'start_date') else '',
-                'end_date': result.end_date.strftime('%Y-%m-%d') if hasattr(result, 'end_date') else '',
-                'initial_capital': result.initial_capital if hasattr(result, 'initial_capital') else 0,
-                'metrics': result.metrics if hasattr(result, 'metrics') else {},
-                'equity_curve': result.equity_curve if hasattr(result, 'equity_curve') else [],
-                'trades': result.trades if hasattr(result, 'trades') else [],
-            }
-        
-        # Add data sources
-        result_dict['data_sources'] = data_sources
+        # We already created result_dict above, just add data sources if not already present
+        if 'data_sources' not in result_dict:
+            result_dict['data_sources'] = data_sources
             
         # Handle metrics properly - convert numpy values, replace NaN/Infinity
         if 'metrics' in result_dict and isinstance(result_dict['metrics'], dict):

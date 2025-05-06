@@ -6,8 +6,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 import random
 import numpy as np
-# Import screener functions
-from ui.screener_functions import run_stock_screener, add_stocks_to_backtest, transfer_to_backtest_tab, prepare_for_backtest, load_screened_symbols, deploy_to_alpaca
 # Import make_subplots at the module level to ensure it's always available
 try:
     from plotly.subplots import make_subplots
@@ -22,18 +20,13 @@ import datetime
 import os
 import logging
 import numpy as np
-import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get API URL from environment or use default
-# In Docker, the backend service is accessible via the service name 'backend'
-API_BASE_URL = os.environ.get("API_BASE_URL", "http://backend:8000")
-
-# Global variable to store screened symbols
-screened_symbols_for_backtest = ""
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 
 def update_portfolio():
     """Fetch portfolio data from API"""
@@ -319,7 +312,7 @@ def run_backtest(agent_type, symbols, start_date, end_date, initial_capital, con
                 
                 # Return all outputs
                 # NOTE: This order must match the UI component order in the click handler
-                return metrics_table, plot, criteria_md, trades_data, results_with_sources
+                return metrics_table, plot, criteria_md, trades_data, results_with_sources, gr.Tabs.update(selected="Results")
             except json.JSONDecodeError as je:
                 logger.error(f"JSON decode error: {je}, Response content: {response.text}")
                 return [], None, f"Error decoding response: {response.text}", {}
@@ -797,16 +790,6 @@ def plot_portfolio_results(results):
         )
         return fig
 
-# Global variable to store screened symbols
-screened_symbols_for_backtest = ""
-
-# Import the screener functions
-from ui.screener_functions import (
-    run_stock_screener, add_stocks_to_backtest, prepare_for_backtest,
-    transfer_to_backtest_tab, load_screened_symbols, deploy_to_alpaca,
-    screened_symbols_for_backtest
-)
-
 def create_ui():
     """Create the Gradio UI"""
     with gr.Blocks(title="AI Trading Platform", theme=gr.themes.Default()) as demo:
@@ -834,22 +817,7 @@ def create_ui():
             
             # Backtest Tab
             with gr.Tab("Backtest"):
-                # Agent selection dropdown
-                backtest_agent = gr.Dropdown(
-                    label="Agent Type",
-                    choices=["stocks_agent", "options_agent", "crypto_agent", "customizable_agent"],
-                    value="customizable_agent"
-                )
-                
-                # Container for customizable agent settings
-                customizable_settings = gr.Group(visible=True)
-                
                 # Main layout with two columns
-                with gr.Row():
-                    with gr.Column():
-                        # Strategy toggles
-                        gr.Markdown("### Strategy Selection")
-                        momentum_enabled = gr.Checkbox(label="Momentum Strategy", value=True,
                                                       info="Uses RSI, MACD and price momentum to identify trending markets")
                         mean_reversion_enabled = gr.Checkbox(label="Mean Reversion Strategy", value=True,
                                                          info="Uses Bollinger Bands to buy oversold and sell overbought conditions")
@@ -894,49 +862,11 @@ def create_ui():
                         trailing_stop = gr.Checkbox(label="Use Trailing Stop", value=True, 
                                                  info="Adjusts stop loss as price moves in favorable direction")
                 
-                # Core backtest parameters
-                with gr.Row():
-                    with gr.Column():
-                        with gr.Row():
-                            backtest_symbols = gr.Textbox(label="Symbols (comma-separated)", value="AAPL,MSFT,GOOG", info="e.g. AAPL,MSFT,GOOG", scale=4)
-                            load_screened_btn = gr.Button("Load from Screener", scale=1)
-                        backtest_start = gr.Textbox(label="Start Date", value="2022-01-01", info="YYYY-MM-DD")
-                        backtest_end = gr.Textbox(label="End Date", value="2022-12-31", info="YYYY-MM-DD")
-                        backtest_capital = gr.Number(label="Initial Capital", value=100000, info="Starting cash amount")
-                
-                # Data source options
-                with gr.Row():
-                    use_mock_data = gr.Checkbox(label="Use Mock Data if API Fails", value=True)
-                    allow_short_backtest = gr.Checkbox(label="Allow Short Positions", value=False)
-                    mock_data_warning = gr.Markdown(visible=False, value="⚠️ **WARNING: Using mock data for backtesting. Results may not reflect actual market behavior.**")                      
-                    with gr.Column():
-                        # Strategy saving options
-                        gr.Markdown("### Save Strategy")
-                        strategy_name = gr.Textbox(label="Strategy Name", placeholder="My Custom Strategy")
-                        strategy_description = gr.Textbox(label="Strategy Description", placeholder="Description of your strategy", lines=3)
-                        save_strategy = gr.Checkbox(label="Save Strategy for Later Use", value=False)
-                
-                # Function to load screened symbols into backtest tab
-                def load_screened_symbols():
-                    global screened_symbols_for_backtest
-                    if not screened_symbols_for_backtest:
-                        return gr.update(value="No screened symbols available. Run the screener first."), ""  
-                    return gr.update(value="Loaded symbols from screener"), screened_symbols_for_backtest
-                
-                # Wire up the load screened symbols button
-                load_screened_btn.click(
-                    fn=load_screened_symbols,
-                    inputs=[],
-                    outputs=[gr.Textbox(label="Load Status"), backtest_symbols]
-                )
-                
-                # Run button at the bottom of the Backtest tab
+                # Run button at the bottom of the Backtest tab (outside the subtabs)
                 with gr.Row():
                     run_backtest_btn = gr.Button("Run Backtest", variant="primary", size="large")
-                
-                # Results section with tabs for different views
-                backtest_tabs = gr.Tabs()
-                with backtest_tabs:
+                    
+                    # Results subtab
                     with gr.Tab("Results"):
                         # Performance metrics section
                         with gr.Row():
@@ -1062,258 +992,89 @@ def create_ui():
                                        # Risk parameters
                                        max_position_size, stop_loss, take_profit, trailing_stop,
                                        # Core backtest parameters
-                                       backtest_symbols, backtest_start, backtest_end, backtest_capital,
-                                       # Data source options
-                                       use_mock_data,
+                                       symbols, start_date, end_date, initial_capital,
                                        # Strategy saving parameters
                                        strategy_name, strategy_description, save_strategy):
-    
-                try:
-                    # Import the new BacktraderEngine
-                    from backtest.backtrader_engine import BacktraderEngine
-                    from data.data_fetcher import DataFetcher
-                    import pandas as pd
-                    import plotly.graph_objects as go
-                    import json
-                    import logging
-                    
-                    logger = logging.getLogger(__name__)
-                    
-                    # Initialize data fetcher and backtest engine
-                    data_fetcher = DataFetcher()
-                    engine = BacktraderEngine(data_fetcher=data_fetcher, use_mock_data=use_mock_data)
-                    
-                    # Process symbols and check for position types
-                    symbol_list = []
-                    position_types = {}
-                    
-                    for s in backtest_symbols.split(","):
-                        s = s.strip()
-                        if not s:
-                            continue
-                            
-                        # Check if symbol has position type indicator
-                        if ":short" in s:
-                            symbol = s.split(":short")[0].strip()
-                            position_types[symbol] = "short"
-                            symbol_list.append(symbol)
-                        else:
-                            symbol_list.append(s)
-                            position_types[s] = "long"  # Default to long
-                    
-                    logger.info(f"Processed symbols: {symbol_list} with position types: {position_types}")
-                    
-                    # Process strategy parameters
-                    if agent_type == "customizable_agent":
-                        # Map UI parameters to BacktraderEngine parameters
-                        strategy_params = {
-                            'rsi_period': int(rsi_period),
-                            'rsi_overbought': int(rsi_overbought),
-                            'rsi_oversold': int(rsi_oversold),
-                            'sma_period_fast': int(ma_fast_period),
-                            'sma_period_slow': int(ma_slow_period),
-                            'stop_loss': float(stop_loss) / 100,  # Convert from percentage to decimal
-                            'take_profit': float(take_profit) / 100,  # Convert from percentage to decimal
-                            'risk_pct': float(max_position_size) / 100,  # Convert from percentage to decimal
-                            'trailing_stop': trailing_stop,
-                            'momentum_weight': float(momentum_weight if momentum_enabled else 0),
-                            'mean_reversion_weight': float(mean_reversion_weight if mean_reversion_enabled else 0),
-                            'breakout_weight': float(breakout_weight if breakout_enabled else 0),
-                            'volatility_weight': float(volatility_weight if volatility_enabled else 0),
-                            'debug': True  # Enable debug logging for development
-                        }
-                        
-                        # Add strategy
-                        engine.add_strategy(strategy_type='ShrekStrategy', **strategy_params)
-                    else:
-                        # For predefined agents, we just pass the agent type
-                        engine.add_strategy(strategy_type=agent_type)
-                    
-                    # Add data
-                    success, data_source = engine.add_data(symbol_list, backtest_start, backtest_end, position_types=position_types)
-                    
-                    if not success:
-                        # Return error if data loading failed
-                        return [], None, f"Failed to load data: {data_source}", {}, {}, gr.update(visible=False)
-                    
-                    # Run backtest
-                    results = engine.run_backtest(initial_cash=float(backtest_capital))
-                    
-                    if not results.get('success', False):
-                        # Return error if backtest failed
-                        return [], None, f"Backtest failed: {results.get('error', 'Unknown error')}", {}, {}, gr.update(visible=False)
-                    
-                    # Format metrics for display
-                    metrics_table = []
-                    for key, value in results.get('metrics', {}).items():
-                        if isinstance(value, (int, float)):
-                            if abs(value) > 1:
-                                metrics_table.append([key.replace('_', ' ').title(), f"{value:.2f}"])
-                            else:
-                                metrics_table.append([key.replace('_', ' ').title(), f"{value:.4f}"])
-                        else:
-                            metrics_table.append([key.replace('_', ' ').title(), str(value)])
-                    
-                    # Create equity curve plot
-                    equity_curve = results.get('equity_curve', [])
-                    if equity_curve:
-                        dates = [item.get('date') for item in equity_curve]
-                        values = [item.get('value') for item in equity_curve]
-                        
-                        fig = go.Figure()
-                        fig.add_trace(go.Scatter(
-                            x=dates, 
-                            y=values,
-                            mode='lines',
-                            name='Portfolio Value',
-                            line=dict(color='blue', width=2)
-                        ))
-                        
-                        # Add buy/sell markers based on trades
-                        trades = results.get('trades', [])
-                        if trades:
-                            buy_dates = [trade.get('entry_date') for trade in trades]
-                            buy_prices = [trade.get('entry_price') for trade in trades]
-                            
-                            sell_dates = [trade.get('exit_date') for trade in trades]
-                            sell_prices = [trade.get('exit_price') for trade in trades]
-                            
-                            fig.add_trace(go.Scatter(
-                                x=buy_dates,
-                                y=buy_prices,
-                                mode='markers',
-                                name='Buy',
-                                marker=dict(color='green', size=10, symbol='triangle-up')
-                            ))
-                            
-                            fig.add_trace(go.Scatter(
-                                x=sell_dates,
-                                y=sell_prices,
-                                mode='markers',
-                                name='Sell',
-                                marker=dict(color='red', size=10, symbol='triangle-down')
-                            ))
-                        
-                        fig.update_layout(
-                            title='Equity Curve',
-                            xaxis_title='Date',
-                            yaxis_title='Portfolio Value ($)',
-                            template='plotly_white'
-                        )
-                        plot = fig
-                    else:
-                        plot = None
-                    
-                    # Format agent configuration for display
-                    criteria_md = f"## Agent Configuration\n\n"
-                    criteria_md += f"**Agent Type:** {agent_type}\n\n"
-                    
-                    if agent_type == "customizable_agent":
-                        criteria_md += "### Enabled Strategies:\n"
-                        if momentum_enabled:
-                            criteria_md += f"- Momentum (Weight: {momentum_weight})\n"
-                        if mean_reversion_enabled:
-                            criteria_md += f"- Mean Reversion (Weight: {mean_reversion_weight})\n"
-                        if breakout_enabled:
-                            criteria_md += f"- Breakout (Weight: {breakout_weight})\n"
-                        if volatility_enabled:
-                            criteria_md += f"- Volatility (Weight: {volatility_weight})\n"
-                        
-                        criteria_md += "\n### Technical Parameters:\n"
-                        criteria_md += f"- RSI Period: {rsi_period}\n"
-                        criteria_md += f"- RSI Overbought: {rsi_overbought}\n"
-                        criteria_md += f"- RSI Oversold: {rsi_oversold}\n"
-                        criteria_md += f"- MA Fast Period: {ma_fast_period}\n"
-                        criteria_md += f"- MA Slow Period: {ma_slow_period}\n"
-                        criteria_md += f"- Bollinger Bands Period: {bb_period}\n"
-                        criteria_md += f"- Bollinger Bands STD: {bb_std}\n"
-                        
-                        criteria_md += "\n### Risk Management:\n"
-                        criteria_md += f"- Max Position Size: {max_position_size}%\n"
-                        criteria_md += f"- Stop Loss: {stop_loss}%\n"
-                        criteria_md += f"- Take Profit: {take_profit}%\n"
-                        criteria_md += f"- Trailing Stop: {'Enabled' if trailing_stop else 'Disabled'}\n"
-                    
-                    # Format trades for display
-                    trades_data = []
-                    for trade in results.get('trades', []):
-                        profit_loss = trade.get('profit_loss', 0)
-                        profit_loss_color = 'green' if profit_loss > 0 else 'red'
-                        
-                        trades_data.append({
-                            'Date': trade.get('exit_date', ''),
-                            'Symbol': trade.get('symbol', 'UNKNOWN'),
-                            'Action': 'SELL' if trade.get('type', '') == 'sell' else 'BUY',
-                            'Entry Price': f"${trade.get('entry_price', 0):.2f}",
-                            'Exit Price': f"${trade.get('exit_price', 0):.2f}",
-                            'P&L': f"${profit_loss:.2f}",
-                            'P&L %': f"{trade.get('profit_loss_pct', 0):.2f}%"
-                        })
-                    
-                    # Sort trades by date
-                    trades_data.sort(key=lambda x: x.get('Date', ''), reverse=True)
-                    
-                    # Check if using mock data
-                    using_mock_data = results.get('data_source') == 'mock'
-                    
-                    # Save strategy if requested
-                    if save_strategy and strategy_name:
-                        try:
-                            # Format strategy details
-                            strategy_info = {
-                                "name": strategy_name,
-                                "description": strategy_description or "Custom strategy",
-                                "agent_type": agent_type,
-                                "parameters": strategy_params if agent_type == "customizable_agent" else {},
-                                "performance": {
-                                    "total_return": results.get('metrics', {}).get('total_return', 0),
-                                    "sharpe_ratio": results.get('metrics', {}).get('sharpe_ratio', 0),
-                                    "max_drawdown": results.get('metrics', {}).get('max_drawdown', 0),
-                                    "win_rate": results.get('metrics', {}).get('win_rate', 0)
-                                },
-                                "test_period": {
-                                    "start_date": backtest_start,
-                                    "end_date": backtest_end,
-                                    "symbols": symbol_list
+                
+                # Handle customizable agent
+                if agent_type == "customizable_agent":
+                    # Create comprehensive config structure with strategy params
+                    config = {
+                        "strategies": {
+                            "momentum": {
+                                "enabled": momentum_enabled, 
+                                "weight": momentum_weight,
+                                "params": {
+                                    "rsi_period": int(rsi_period),
+                                    "rsi_overbought": int(rsi_overbought),
+                                    "rsi_oversold": int(rsi_oversold),
+                                    "macd_fast": int(ma_fast_period),
+                                    "macd_slow": int(ma_slow_period),
+                                    "macd_signal": 9
+                                }
+                            },
+                            "mean_reversion": {
+                                "enabled": mean_reversion_enabled, 
+                                "weight": mean_reversion_weight,
+                                "params": {
+                                    "bollinger_period": int(bb_period),
+                                    "bollinger_std": float(bb_std),
+                                    "vwap_period": 14
+                                }
+                            },
+                            "breakout": {
+                                "enabled": breakout_enabled, 
+                                "weight": breakout_weight,
+                                "params": {
+                                    "atr_period": 14,
+                                    "atr_multiplier": 2.0,
+                                    "ma_periods": [20, 50, 200]
+                                }
+                            },
+                            "volatility": {
+                                "enabled": volatility_enabled, 
+                                "weight": volatility_weight,
+                                "params": {
+                                    "atr_period": 14,
+                                    "atr_multiplier": 1.5
                                 }
                             }
-                            
-                            # Save strategy (using API endpoint)
-                            response = requests.post(
-                                f"{API_BASE_URL}/strategy/",
-                                json={"strategy": strategy_info}
-                            )
-                            
-                            if response.status_code != 200:
-                                logger.error(f"Failed to save strategy: {response.text}")
-                            
-                        except Exception as e:
-                            logger.error(f"Error saving strategy: {str(e)}")
-                    
-                    # Return results and update UI components
-                    return metrics_table, plot, criteria_md, trades_data, results, gr.update(visible=using_mock_data)
-                    
-                except Exception as e:
-                    import traceback
-                    logger.error(f"Error in process_and_run_backtest: {str(e)}\n{traceback.format_exc()}")
-                    return [], None, f"Error: {str(e)}", {}, {}, gr.update(visible=False)
+                        },
+                        "position_sizing": {
+                            "max_position_size": float(max_position_size),
+                            "signal_threshold": 0.5,
+                            "scale_by_strength": True
+                        },
+                        "risk_management": {
+                            "stop_loss": float(stop_loss),
+                            "take_profit": float(take_profit),
+                            "trailing_stop": trailing_stop
+                        }
+                    }
+                    # Call the standard backtest function with the processed config and saving options
+                    return run_backtest(
+                        agent_type, symbols, start_date, end_date, initial_capital, 
+                        config=config, 
+                        strategy_name=strategy_name, 
+                        strategy_description=strategy_description,
+                        save_strategy=save_strategy
+                    )
+                else:
+                    # Just pass through to the standard function with strategy saving options
+                    return run_backtest(
+                        agent_type, symbols, start_date, end_date, initial_capital,
+                        strategy_name=strategy_name,
+                        strategy_description=strategy_description,
+                        save_strategy=save_strategy
+                    )
             
             # Show/hide customizable settings based on agent selection
-            backtest_agent.change(fn=lambda x: gr.update(visible=(x == "customizable_agent")), 
-                                inputs=[backtest_agent], outputs=customizable_settings)
-            
-            # Define a function to handle the backtest results and show the results tab
-            def handle_backtest_results(*args):
-                # Call the process_and_run_backtest function with all the arguments
-                results = process_and_run_backtest(*args)
-                # The results are already returned to the UI components
-                # We don't need to explicitly select the tab as it will be visible
-                # when the results are displayed
-                return results
+            backtest_agent.change(fn=lambda x: {customizable_settings: gr.update(visible=(x == "customizable_agent"))}, 
+                                inputs=[backtest_agent], outputs=[customizable_settings])
             
             # Set up backtest button with all parameters
             run_backtest_btn.click(
-                fn=handle_backtest_results,
+                process_and_run_backtest,
                 inputs=[
                     # Agent selection
                     backtest_agent, 
@@ -1328,322 +1089,19 @@ def create_ui():
                     max_position_size, stop_loss, take_profit, trailing_stop,
                     # Core backtest parameters
                     backtest_symbols, backtest_start, backtest_end, backtest_capital,
-                    # Data source options
-                    use_mock_data, allow_short_backtest,
                     # Strategy saving parameters
                     strategy_name, strategy_description, save_strategy
                 ],
-                outputs=[backtest_metrics, backtest_plot, agent_criteria_md, trades_table, backtest_results, mock_data_warning]
-            )
-            
-            # Stock Screener Tab
-            with gr.Tab("Stock Screener"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("### Stock Screening Criteria")
-                        
-                        # Universe selection
-                        universe_input = gr.Textbox(
-                            label="Stock Universe", 
-                            placeholder="Leave blank for S&P 500 or enter comma-separated symbols",
-                            info="Leave blank to screen S&P 500 stocks or enter specific symbols"
-                        )
-                        
-                        # Price criteria
-                        with gr.Accordion("Price Criteria", open=True):
-                            min_price = gr.Number(label="Minimum Price ($)", value=5)
-                            max_price = gr.Number(label="Maximum Price ($)", value=1000)
-                            min_volume = gr.Number(label="Minimum Volume", value=100000)
-                        
-                        # Technical indicators
-                        with gr.Accordion("Technical Indicators", open=True):
-                            min_volatility = gr.Number(label="Minimum Volatility (%)", value=1)
-                            max_volatility = gr.Number(label="Maximum Volatility (%)", value=5)
-                            min_rsi = gr.Number(label="Minimum RSI", value=30)
-                            max_rsi = gr.Number(label="Maximum RSI", value=70)
-                            
-                            price_above_sma50 = gr.Checkbox(label="Price Above 50-day SMA", value=False)
-                            price_below_sma50 = gr.Checkbox(label="Price Below 50-day SMA", value=False)
-                            price_above_sma200 = gr.Checkbox(label="Price Above 200-day SMA", value=False)
-                            price_below_sma200 = gr.Checkbox(label="Price Below 200-day SMA", value=False)
-                            
-                            macd_positive = gr.Checkbox(label="MACD Positive", value=False)
-                            macd_negative = gr.Checkbox(label="MACD Negative", value=False)
-                        
-                        # Sorting options
-                        with gr.Accordion("Sorting Options", open=True):
-                            sort_by = gr.Dropdown(
-                                label="Sort By",
-                                choices=["Symbol", "Price", "Volume", "Volatility", "RSI"],
-                                value="Volume"
-                            )
-                            sort_ascending = gr.Checkbox(label="Sort Ascending", value=False)
-                            max_results = gr.Number(label="Maximum Results", value=50)
-                        
-                        # Position type
-                        allow_short_positions = gr.Checkbox(label="Allow Short Positions", value=False)
-                        
-                        # Run button
-                        run_screener_btn = gr.Button("Run Stock Screener", variant="primary")
-                    
-                    with gr.Column(scale=1):
-                        # Results
-                        screener_results = gr.DataFrame(label="Screener Results")
-                        
-                        # Add to backtest selection
-                        add_to_backtest_btn = gr.Button("Add Selected to Backtest")
-                        selected_stocks = gr.DataFrame(label="Selected Stocks for Backtesting")
-                        
-                        # Transfer to backtest tab
-                        transfer_to_backtest_btn = gr.Button("Transfer to Backtest Tab", variant="secondary")
-                        transfer_status = gr.Textbox(label="Transfer Status")
-                
-                # Wire up the screener button
-                run_screener_btn.click(
-                    fn=run_stock_screener,
-                    inputs=[
-                        universe_input, min_price, max_price, min_volume,
-                        min_volatility, max_volatility, min_rsi, max_rsi,
-                        price_above_sma50, price_below_sma50,
-                        price_above_sma200, price_below_sma200,
-                        macd_positive, macd_negative,
-                        sort_by, sort_ascending, max_results
-                    ],
-                    outputs=[screener_results]
-                )
-                
-                # Wire up the add to backtest button
-                add_to_backtest_btn.click(
-                    fn=add_stocks_to_backtest,
-                    inputs=[screener_results, allow_short_positions],
-                    outputs=[selected_stocks]
-                )
-                
-                # Wire up the transfer button
-                transfer_to_backtest_btn.click(
-                    fn=transfer_to_backtest_tab,
-                    inputs=[selected_stocks],
-                    outputs=[transfer_status]
-                )
-            
-            # Alpaca Trading Tab
-            with gr.Tab("Alpaca Trading"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("### Alpaca Paper Trading Configuration")
-                        
-                        # API Keys
-                        with gr.Accordion("API Keys", open=True):
-                            alpaca_api_key = gr.Textbox(label="Alpaca API Key", type="password")
-                            alpaca_api_secret = gr.Textbox(label="Alpaca API Secret", type="password")
-                            alpaca_paper = gr.Checkbox(label="Use Paper Trading", value=True)
-                        
-                        # Strategy Selection
-                        with gr.Accordion("Strategy Selection", open=True):
-                            # Dropdown for saved strategies
-                            strategy_dropdown = gr.Dropdown(
-                                label="Select Strategy", 
-                                choices=["Custom Strategy", "Mean Reversion", "Momentum", "Breakout"],
-                                value="Custom Strategy"
-                            )
-                            min_volume = gr.Number(label="Minimum Volume", value=100000)
-                        
-                        # Technical indicators
-                        with gr.Accordion("Technical Indicators", open=True):
-                            min_volatility = gr.Number(label="Minimum Volatility (%)", value=1)
-                            max_volatility = gr.Number(label="Maximum Volatility (%)", value=5)
-                            min_rsi = gr.Number(label="Minimum RSI", value=30)
-                            max_rsi = gr.Number(label="Maximum RSI", value=70)
-                            
-                            price_above_sma50 = gr.Checkbox(label="Price Above 50-day SMA", value=False)
-                            price_below_sma50 = gr.Checkbox(label="Price Below 50-day SMA", value=False)
-                            price_above_sma200 = gr.Checkbox(label="Price Above 200-day SMA", value=False)
-                            price_below_sma200 = gr.Checkbox(label="Price Below 200-day SMA", value=False)
-                            
-                            macd_positive = gr.Checkbox(label="MACD Positive", value=False)
-                            macd_negative = gr.Checkbox(label="MACD Negative", value=False)
-                        
-                        # Sorting options
-                        with gr.Accordion("Sorting Options", open=True):
-                            sort_by = gr.Dropdown(
-                                label="Sort By",
-                                choices=["Symbol", "Price", "Volume", "Volatility", "RSI"],
-                                value="Volume"
-                            )
-                            sort_ascending = gr.Checkbox(label="Sort Ascending", value=False)
-                            max_results = gr.Number(label="Maximum Results", value=50)
-                        
-                        # Position type
-                        allow_short_positions = gr.Checkbox(label="Allow Short Positions", value=False)
-                        
-                        # Run button
-                        run_screener_btn = gr.Button("Run Stock Screener", variant="primary")
-                    
-                    with gr.Column(scale=1):
-                        # Results
-                        screener_results = gr.DataFrame(label="Screener Results")
-                        
-                        # Add to backtest selection
-                        add_to_backtest_btn = gr.Button("Add Selected to Backtest")
-                        selected_stocks = gr.DataFrame(label="Selected Stocks for Backtesting")
-                        
-                        # Transfer to backtest tab
-                        transfer_to_backtest_btn = gr.Button("Transfer to Backtest Tab", variant="secondary")
-                        transfer_status = gr.Textbox(label="Transfer Status")
-                
-                # Wire up the screener button
-                run_screener_btn.click(
-                    fn=run_stock_screener,
-                    inputs=[
-                        universe_input, min_price, max_price, min_volume,
-                        min_volatility, max_volatility, min_rsi, max_rsi,
-                        price_above_sma50, price_below_sma50,
-                        price_above_sma200, price_below_sma200,
-                        macd_positive, macd_negative,
-                        sort_by, sort_ascending, max_results
-                    ],
-                    outputs=[screener_results]
-                )
-                
-                # Wire up the add to backtest button
-                add_to_backtest_btn.click(
-                    fn=add_stocks_to_backtest,
-                    inputs=[screener_results, allow_short_positions],
-                    outputs=[selected_stocks]
-                )
-                
-                # Wire up the transfer button
-                transfer_to_backtest_btn.click(
-                    fn=transfer_to_backtest_tab,
-                    inputs=[selected_stocks],
-                    outputs=[transfer_status]
-                )
-            
-            with gr.Tab("Saved Strategies"):
-                # Price criteria
-                with gr.Row():
-                    min_price = gr.Number(label="Min Price ($)", value=10)
-                    max_price = gr.Number(label="Max Price ($)", value=1000)
-                
-                # Volume criteria
-                min_volume = gr.Number(label="Min Daily Volume", value=100000)
-                
-                # Volatility criteria
-                with gr.Row():
-                    min_volatility = gr.Number(label="Min Volatility (%)", value=0)
-                    max_volatility = gr.Number(label="Max Volatility (%)", value=100)
-                
-                # RSI criteria
-                with gr.Row():
-                    min_rsi = gr.Number(label="Min RSI", value=0, minimum=0, maximum=100)
-                    max_rsi = gr.Number(label="Max RSI", value=100, minimum=0, maximum=100)
-                
-                # Moving average criteria
-                price_above_sma50 = gr.Checkbox(label="Price Above 50-day MA", value=False)
-                price_below_sma50 = gr.Checkbox(label="Price Below 50-day MA", value=False)
-                price_above_sma200 = gr.Checkbox(label="Price Above 200-day MA", value=False)
-                price_below_sma200 = gr.Checkbox(label="Price Below 200-day MA", value=False)
-                
-                # MACD criteria
-                macd_positive = gr.Checkbox(label="MACD Positive", value=False)
-                macd_negative = gr.Checkbox(label="MACD Negative", value=False)
-                
-                # Sorting and limits
-                with gr.Row():
-                    sort_by = gr.Dropdown(
-                        label="Sort By", 
-                        choices=["Symbol", "Price", "Volume", "Volatility", "RSI", "Daily_Change_%"], 
-                        value="Volume"
-                    )
-                    sort_ascending = gr.Checkbox(label="Sort Ascending", value=False)
-                
-                max_results = gr.Slider(minimum=5, maximum=100, value=20, step=5, label="Max Results")
-                
-                # Allow short positions
-                allow_short_positions = gr.Checkbox(label="Allow Short Positions", value=False)
-                
-                # Run button
-                run_screener_btn = gr.Button("Run Stock Screener", variant="primary")
-                
-                with gr.Column(scale=1):
-                    # Results section
-                    gr.Markdown("### Screening Results")
-                    screener_results = gr.Dataframe(
-                        headers=["Symbol", "Price", "Volume", "Volatility_20d", "RSI_14", "Daily_Change_%", "Above_50MA", "Above_200MA", "MACD"],
-                        label="Screener Results",
-                        interactive=False,
-                        wrap=True
-                    )
-                    
-                    # Add to backtest button
-                    add_to_backtest_btn = gr.Button("Add Selected to Backtest", variant="secondary")
-            
-            # Selected stocks section
-            with gr.Row():
-                with gr.Column(scale=1):
-                    gr.Markdown("### Selected Stocks for Backtesting")
-                    selected_stocks = gr.Dataframe(
-                        headers=["Symbol", "Price", "Position Type"],
-                        label="Selected Stocks",
-                        interactive=True,
-                        row_count=5,
-                        col_count=(3, "fixed")
-                    )
-                with gr.Column(scale=1):
-                    transfer_to_backtest_btn = gr.Button("Transfer to Backtest Tab", variant="secondary")
-                    backtest_symbols_output = gr.Textbox(label="Symbols for Backtest", visible=False)
-            
-            # Using the imported run_stock_screener function from ui.screener_functions
-            
-            # Using the imported add_stocks_to_backtest function from ui.screener_functions
-            
-            # Wire up the screener button
-            run_screener_btn.click(
-                fn=run_stock_screener,
-                inputs=[
-                    universe_input, min_price, max_price, min_volume, min_volatility, max_volatility,
-                    min_rsi, max_rsi, price_above_sma50, price_below_sma50,
-                    price_above_sma200, price_below_sma200, macd_positive, macd_negative,
-                    sort_by, sort_ascending, max_results
-                ],
-                outputs=[screener_results]
-            )
-            
-            # Using the imported prepare_for_backtest function from ui.screener_functions
-            
-            # Function to transfer symbols to backtest tab
-            def transfer_to_backtest_tab(selected_stocks_df):
-                symbols_str = prepare_for_backtest(selected_stocks_df)
-                if not symbols_str:
-                    return gr.update(value="No stocks selected")
-                    
-                # Store the symbols string for later use
-                global screened_symbols_for_backtest
-                screened_symbols_for_backtest = symbols_str
-                
-                # Return a success message
-                return gr.update(value=f"Transferred {len(symbols_str.split(','))} stocks to backtest tab. Switch to Backtest tab to use them.")
-            
-            # Wire up the buttons
-            add_to_backtest_btn.click(
-                fn=add_stocks_to_backtest,
-                inputs=[screener_results, allow_short_positions],
-                outputs=[selected_stocks]
-            )
-            
-            transfer_to_backtest_btn.click(
-                fn=transfer_to_backtest_tab,
-                inputs=[selected_stocks],
-                outputs=[gr.Textbox(label="Transfer Status")]
+                outputs=[backtest_metrics, backtest_plot, agent_criteria_md, trades_table, backtest_results, backtest_tabs]
             )
             
         # Saved Strategies Tab
-            with gr.Tab("Saved Strategies"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("### Saved Trading Strategies")
-                        refresh_strategies_btn = gr.Button("Refresh Strategies List")
-                        strategies_table = gr.DataFrame(
+        with gr.Tab("Saved Strategies"):
+            with gr.Row():
+                with gr.Column(scale=1):
+                    gr.Markdown("### Saved Trading Strategies")
+                    refresh_strategies_btn = gr.Button("Refresh Strategies List")
+                    strategies_table = gr.DataFrame(
                         headers=["ID", "Name", "Agent Type", "Symbols", "Created", "Total Return", "Sharpe", "Win Rate"],
                         label="Saved Strategies"
                     )
@@ -1756,12 +1214,11 @@ def create_ui():
             )
         
         # Portfolio Backtest Tab
-            with gr.Tab("Portfolio Backtest"):
-                
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("### Portfolio Configuration")
-                        portfolio_allocations = gr.Textbox(
+        with gr.Tab("Portfolio Backtest"):
+            with gr.Row():
+                with gr.Column(scale=1):
+                    gr.Markdown("### Portfolio Configuration")
+                    portfolio_allocations = gr.Textbox(
                         label="Asset Allocations (symbol: weight)", 
                         value="AAPL: 0.4\nMSFT: 0.3\nGOOG: 0.3",
                         lines=10
@@ -1775,7 +1232,7 @@ def create_ui():
                     portfolio_end = gr.Textbox(label="End Date (YYYY-MM-DD)", value="2023-12-31")
                     generate_insights = gr.Checkbox(label="Generate LLM Insights", value=False)
                     run_portfolio_btn = gr.Button("Run Portfolio Backtest")
-            
+                
             with gr.Row():
                 portfolio_metrics = gr.DataFrame(
                     headers=["Metric", "Value"],
@@ -1808,201 +1265,16 @@ def create_ui():
                     portfolio_insights
                 ]
             )
-            
-            # Initialize with default data
-            try:
-                demo.load(
-                    fn=lambda: update_portfolio(),
-                    outputs=[portfolio_json, positions_table]
-                )
-            except Exception as e:
-                logger.error(f"Error loading initial data: {e}")
-            
-        # Alpaca Trading Tab
-            with gr.Tab("Alpaca Trading"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("### Alpaca Paper Trading Configuration")
-                    
-                    # API Keys
-                    with gr.Accordion("API Keys", open=True):
-                        alpaca_api_key = gr.Textbox(label="Alpaca API Key", type="password")
-                        alpaca_api_secret = gr.Textbox(label="Alpaca API Secret", type="password")
-                        alpaca_paper = gr.Checkbox(label="Use Paper Trading", value=True)
-                    
-                    # Strategy Selection
-                    with gr.Accordion("Strategy Selection", open=True):
-                        # Dropdown for saved strategies
-                        strategy_dropdown = gr.Dropdown(
-                            label="Select Strategy", 
-                            choices=["Custom Strategy", "Mean Reversion", "Momentum", "Breakout"],
-                            value="Custom Strategy"
-                        )
-                        
-                        # Custom strategy parameters
-                        with gr.Group(visible=True) as custom_strategy_params:
-                            gr.Markdown("### Custom Strategy Parameters")
-                            # Strategy toggles
-                            momentum_enabled = gr.Checkbox(label="Enable Momentum", value=True)
-                            mean_reversion_enabled = gr.Checkbox(label="Enable Mean Reversion", value=True)
-                            breakout_enabled = gr.Checkbox(label="Enable Breakout", value=True)
-                            volatility_enabled = gr.Checkbox(label="Enable Volatility", value=True)
-                            
-                            # Strategy weights
-                            momentum_weight = gr.Slider(minimum=0, maximum=2, value=1.0, step=0.1, label="Momentum Weight")
-                            mean_reversion_weight = gr.Slider(minimum=0, maximum=2, value=1.0, step=0.1, label="Mean Reversion Weight")
-                            breakout_weight = gr.Slider(minimum=0, maximum=2, value=1.0, step=0.1, label="Breakout Weight")
-                            volatility_weight = gr.Slider(minimum=0, maximum=2, value=0.8, step=0.1, label="Volatility Weight")
-                    
-                    # Portfolio Allocation
-                    with gr.Accordion("Portfolio Allocation", open=True):
-                        max_allocation = gr.Slider(minimum=0.01, maximum=1.0, value=0.5, step=0.01, 
-                                                 label="Maximum Portfolio Allocation", 
-                                                 info="Maximum percentage of portfolio to allocate to this strategy")
-                        max_position_size = gr.Slider(minimum=0.01, maximum=0.5, value=0.1, step=0.01, 
-                                                    label="Maximum Position Size", 
-                                                    info="Maximum percentage of portfolio per position")
-                    
-                    # Risk Management
-                    with gr.Accordion("Risk Management", open=True):
-                        stop_loss = gr.Slider(minimum=0.01, maximum=0.2, value=0.05, step=0.01, 
-                                            label="Stop Loss (%)", 
-                                            info="Percentage below entry price to exit position")
-                        take_profit = gr.Slider(minimum=0.01, maximum=0.5, value=0.15, step=0.01, 
-                                              label="Take Profit (%)", 
-                                              info="Percentage above entry price to exit position")
-                        trailing_stop = gr.Checkbox(label="Use Trailing Stop", value=True)
-                        allow_short = gr.Checkbox(label="Allow Short Positions", value=False)
-                    
-                    # Symbols to trade
-                    symbols_input = gr.Textbox(
-                        label="Symbols to Trade (comma-separated)", 
-                        value="AAPL,MSFT,GOOG,AMZN",
-                        info="Enter the symbols you want to trade"
-                    )
-                    
-                    # Load from backtest results
-                    load_from_backtest = gr.Checkbox(label="Load from Backtest Results", value=False)
-                    
-                    # Deploy button
-                    deploy_btn = gr.Button("Deploy to Alpaca", variant="primary")
-                
-                with gr.Column(scale=1):
-                    # Status and logs
-                    deployment_status = gr.Textbox(label="Deployment Status", lines=3)
-                    deployment_logs = gr.Textbox(label="Deployment Logs", lines=15)
-            
-            # Function to deploy strategy to Alpaca
-            def deploy_to_alpaca(api_key, api_secret, paper_trading, strategy_type, 
-                               momentum_enabled, mean_reversion_enabled, breakout_enabled, volatility_enabled,
-                               momentum_weight, mean_reversion_weight, breakout_weight, volatility_weight,
-                               max_allocation, max_position_size, stop_loss, take_profit, trailing_stop, allow_short,
-                               symbols, load_from_backtest):
-                try:
-                    # Validate inputs
-                    if not api_key or not api_secret:
-                        return "Error: API Key and Secret are required", "Please provide valid Alpaca API credentials"
-                    
-                    if not symbols and not load_from_backtest:
-                        return "Error: No symbols specified", "Please provide at least one symbol to trade or load from backtest results"
-                    
-                    # Process symbols
-                    if load_from_backtest and screened_symbols_for_backtest:
-                        # Load symbols from backtest results
-                        symbol_list = []
-                        for symbol in screened_symbols_for_backtest.split(","):
-                            if ":short" in symbol:
-                                # Extract the base symbol without the position type
-                                base_symbol = symbol.split(":")[0]
-                                symbol_list.append((base_symbol, "short"))
-                            else:
-                                symbol_list.append((symbol, "long"))
-                        
-                        # Format for display
-                        symbol_display = ", ".join([f"{s[0]} ({s[1]})" for s in symbol_list])
-                        position_types = {s[0]: s[1] for s in symbol_list}
-                    else:
-                        # Process manually entered symbols
-                        symbol_list = [s.strip() for s in symbols.split(",")]
-                        symbol_display = ", ".join(symbol_list)
-                        position_types = {s: "long" for s in symbol_list}  # Default to long positions
-                    
-                    # Build strategy config
-                    strategy_config = {
-                        "type": strategy_type,
-                        "parameters": {
-                            "momentum_enabled": momentum_enabled,
-                            "mean_reversion_enabled": mean_reversion_enabled,
-                            "breakout_enabled": breakout_enabled,
-                            "volatility_enabled": volatility_enabled,
-                            "momentum_weight": momentum_weight,
-                            "mean_reversion_weight": mean_reversion_weight,
-                            "breakout_weight": breakout_weight,
-                            "volatility_weight": volatility_weight,
-                        },
-                        "risk_management": {
-                            "max_allocation": max_allocation,
-                            "max_position_size": max_position_size,
-                            "stop_loss": stop_loss,
-                            "take_profit": take_profit,
-                            "trailing_stop": trailing_stop,
-                            "allow_short": allow_short
-                        },
-                        "symbols": symbol_list if not load_from_backtest else [s[0] for s in symbol_list],
-                        "position_types": position_types if load_from_backtest else None,
-                        "paper_trading": paper_trading
-                    }
-                    
-                    # In a real implementation, this would call the Alpaca API
-                    # For now, we'll just simulate a successful deployment
-                    import json
-                    import time
-                    
-                    # Log the deployment details
-                    logs = f"Deploying strategy to Alpaca (Paper Trading: {paper_trading})\n"
-                    logs += f"Strategy Type: {strategy_type}\n"
-                    logs += f"Symbols: {symbol_display}\n"
-                    logs += f"Risk Management: Stop Loss {stop_loss*100}%, Take Profit {take_profit*100}%\n"
-                    logs += f"Max Allocation: {max_allocation*100}%, Max Position Size: {max_position_size*100}%\n"
-                    logs += f"Allow Short: {allow_short}\n\n"
-                    
-                    # Simulate API call
-                    logs += "Connecting to Alpaca API...\n"
-                    time.sleep(1)  # Simulate API latency
-                    logs += "Validating API credentials...\n"
-                    time.sleep(1)  # Simulate API latency
-                    logs += "Creating trading strategy...\n"
-                    time.sleep(1)  # Simulate API latency
-                    logs += "Setting up risk parameters...\n"
-                    time.sleep(1)  # Simulate API latency
-                    logs += "Deploying strategy to Alpaca...\n"
-                    time.sleep(1)  # Simulate API latency
-                    logs += "Strategy successfully deployed!\n"
-                    
-                    return "Success: Strategy deployed to Alpaca", logs
-                    
-                except Exception as e:
-                    import traceback
-                    error_details = traceback.format_exc()
-                    return f"Error: {str(e)}", error_details
-            
-            # Wire up the deploy button
-            deploy_btn.click(
-                fn=deploy_to_alpaca,
-                inputs=[
-                    alpaca_api_key, alpaca_api_secret, alpaca_paper,
-                    strategy_dropdown,
-                    momentum_enabled, mean_reversion_enabled, breakout_enabled, volatility_enabled,
-                    momentum_weight, mean_reversion_weight, breakout_weight, volatility_weight,
-                    max_allocation, max_position_size,
-                    stop_loss, take_profit, trailing_stop, allow_short,
-                    symbols_input, load_from_backtest
-                ],
-                outputs=[deployment_status, deployment_logs]
+        
+        # Initialize with default data
+        try:
+            demo.load(
+                fn=lambda: update_portfolio(),
+                outputs=[portfolio_json, positions_table]
             )
-            
-
-                    
+        except Exception as e:
+            logger.error(f"Error loading initial data: {e}")
+        
         # Return the demo for launch
         return demo
 

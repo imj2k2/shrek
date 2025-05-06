@@ -155,7 +155,17 @@ class AdvancedRiskManager:
         """Check if any positions exceed maximum size"""
         alerts = []
         
+        # Handle case where positions is not a list of dictionaries
+        if not positions or not isinstance(positions, list):
+            self.logger.warning(f"Invalid positions format: {type(positions)}")
+            return alerts
+            
         for position in positions:
+            # Handle case where position is not a dictionary
+            if not isinstance(position, dict):
+                self.logger.warning(f"Invalid position format: {type(position)} - {position}")
+                continue
+                
             symbol = position.get('symbol')
             qty = position.get('qty', 0)
             current_price = position.get('current', 0)
@@ -194,7 +204,17 @@ class AdvancedRiskManager:
         """Update and check trailing stops for all positions"""
         alerts = []
         
+        # Handle case where positions is not a list of dictionaries
+        if not positions or not isinstance(positions, list):
+            self.logger.warning(f"Invalid positions format in trailing stops: {type(positions)}")
+            return alerts
+            
         for position in positions:
+            # Handle case where position is not a dictionary
+            if not isinstance(position, dict):
+                self.logger.warning(f"Invalid position format in trailing stops: {type(position)} - {position}")
+                continue
+                
             symbol = position.get('symbol')
             qty = position.get('qty', 0)
             current_price = position.get('current', 0)

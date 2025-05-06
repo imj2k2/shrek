@@ -1,0 +1,230 @@
+=====================================================
+  AI-driven Multi-Agent Trading Platform
+=====================================================
+backend-1  | /usr/local/lib/python3.9/site-packages/gradio_client/documentation.py:106: UserWarning: Could not get documentation group for <class 'gradio.mix.Parallel'>: No known documentation group for module 'gradio.mix'
+backend-1  |   warnings.warn(f"Could not get documentation group for {cls}: {exc}")
+backend-1  | /usr/local/lib/python3.9/site-packages/gradio_client/documentation.py:106: UserWarning: Could not get documentation group for <class 'gradio.mix.Series'>: No known documentation group for module 'gradio.mix'
+backend-1  |   warnings.warn(f"Could not get documentation group for {cls}: {exc}")
+backend-1  | INFO:     Started server process [1]
+backend-1  | INFO:     Waiting for application startup.
+backend-1  | INFO:     Application startup complete.
+backend-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+backend-1  | INFO:     172.18.0.4:44372 - "GET /portfolio HTTP/1.1" 200 OK
+backend-1  | INFO:     172.18.0.4:44388 - "GET /strategies HTTP/1.1" 200 OK
+backend-1  | INFO:     172.18.0.4:44416 - "GET /portfolio HTTP/1.1" 200 OK
+backend-1  | INFO:     172.18.0.4:44404 - "GET /strategies HTTP/1.1" 200 OK
+backend-1  | INFO:     172.18.0.4:44424 - "GET /portfolio HTTP/1.1" 200 OK
+backend-1  | INFO:     172.18.0.4:44430 - "GET /strategies HTTP/1.1" 200 OK
+redis-1    | 1:C 04 May 2025 02:56:07.754 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+redis-1    | 1:C 04 May 2025 02:56:07.756 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+redis-1    | 1:C 04 May 2025 02:56:07.756 * Redis version=7.4.3, bits=64, commit=00000000, modified=0, pid=1, just started
+redis-1    | 1:C 04 May 2025 02:56:07.757 * Configuration loaded
+redis-1    | 1:M 04 May 2025 02:56:07.761 * monotonic clock: POSIX clock_gettime
+redis-1    | 1:M 04 May 2025 02:56:07.785 * Running mode=standalone, port=6379.
+redis-1    | 1:M 04 May 2025 02:56:07.791 * Server initialized
+redis-1    | 1:M 04 May 2025 02:56:07.794 * Reading RDB base file on AOF loading...
+redis-1    | 1:M 04 May 2025 02:56:07.796 * Loading RDB produced by version 7.4.3
+redis-1    | 1:M 04 May 2025 02:56:07.797 * RDB age 559062 seconds
+redis-1    | 1:M 04 May 2025 02:56:07.798 * RDB memory usage when created 0.90 Mb
+redis-1    | 1:M 04 May 2025 02:56:07.799 * RDB is base AOF
+redis-1    | 1:M 04 May 2025 02:56:07.799 * Done loading RDB, keys loaded: 0, keys expired: 0.
+redis-1    | 1:M 04 May 2025 02:56:07.810 * DB loaded from base file appendonly.aof.1.base.rdb: 0.017 seconds
+gradio-1   | /usr/local/lib/python3.9/site-packages/gradio_client/documentation.py:106: UserWarning: Could not get documentation group for <class 'gradio.mix.Parallel'>: No known documentation group for module 'gradio.mix'
+gradio-1   |   warnings.warn(f"Could not get documentation group for {cls}: {exc}")
+gradio-1   | /usr/local/lib/python3.9/site-packages/gradio_client/documentation.py:106: UserWarning: Could not get documentation group for <class 'gradio.mix.Series'>: No known documentation group for module 'gradio.mix'
+gradio-1   |   warnings.warn(f"Could not get documentation group for {cls}: {exc}")
+redis-1    | 1:M 04 May 2025 02:56:07.819 * DB loaded from incr file appendonly.aof.1.incr.aof: 0.005 seconds
+redis-1    | 1:M 04 May 2025 02:56:07.820 * DB loaded from append only file: 0.028 seconds
+redis-1    | 1:M 04 May 2025 02:56:07.820 * Opening AOF incr file appendonly.aof.1.incr.aof on server start
+redis-1    | 1:M 04 May 2025 02:56:07.820 * Ready to accept connections tcp
+gradio-1   | /app/ui/gradio_ui.py:903: UserWarning: You have unused kwarg parameters in Button, please remove them: {'size': 'large'}
+gradio-1   |   run_backtest_btn = gr.Button("Run Backtest", variant="primary", size="large")
+gradio-1   | Running on local URL:  http://0.0.0.0:7860
+gradio-1   | 
+gradio-1   | To create a public link, set `share=True` in `launch()`.
+gradio-1   | ERROR:__main__:Error updating portfolio: HTTPConnectionPool(host='backend', port=8000): Max retries exceeded with url: /portfolio (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7b8ae67a55b0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+gradio-1   | ERROR:__main__:Error fetching strategies list: HTTPConnectionPool(host='backend', port=8000): Max retries exceeded with url: /strategies (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7b8ae67a59a0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+gradio-1   | Traceback (most recent call last):
+gradio-1   |   File "/usr/local/lib/python3.9/site-packages/gradio/routes.py", line 422, in run_predict
+gradio-1   |     output = await app.get_blocks().process_api(
+gradio-1   |   File "/usr/local/lib/python3.9/site-packages/gradio/blocks.py", line 1326, in process_api
+gradio-1   |     data = self.postprocess_data(fn_index, result["prediction"], state)
+gradio-1   |   File "/usr/local/lib/python3.9/site-packages/gradio/blocks.py", line 1260, in postprocess_data
+gradio-1   |     prediction_value = block.postprocess(prediction_value)
+gradio-1   |   File "/usr/local/lib/python3.9/site-packages/gradio/components.py", line 4280, in postprocess
+gradio-1   |     return json.loads(y)
+gradio-1   |   File "/usr/local/lib/python3.9/json/__init__.py", line 346, in loads
+gradio-1   |     return _default_decoder.decode(s)
+gradio-1   |   File "/usr/local/lib/python3.9/json/decoder.py", line 337, in decode
+gradio-1   |     obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+gradio-1   |   File "/usr/local/lib/python3.9/json/decoder.py", line 355, in raw_decode
+gradio-1   |     raise JSONDecodeError("Expecting value", s, err.value) from None
+gradio-1   | json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+gradio-1   | INFO:DataFetcher:Using API source: polygon (Polygon key available: True)
+gradio-1   | INFO:DataFetcher:Fetching AAPL data from Polygon.io
+gradio-1   | WARNING:DataFetcher:Failed to fetch AAPL from Polygon.io: 403
+gradio-1   | INFO:DataFetcher:Fetching AAPL data from Yahoo Finance
+gradio-1   | Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - AAPL: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:Retry 1/3: Empty dataframe from Yahoo Finance for AAPL
+gradio-1   | Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - AAPL: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:Retry 2/3: Empty dataframe from Yahoo Finance for AAPL
+gradio-1   | Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - AAPL: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:No data found for AAPL in Yahoo Finance after 3 attempts
+gradio-1   | INFO:DataFetcher:Falling back to mock data for AAPL after Yahoo Finance attempts failed
+gradio-1   | INFO:DataFetcher:Generating mock data for AAPL from 2022-01-01 to 2022-12-31
+gradio-1   | INFO:DataFetcher:Generated mock data for AAPL with 260 data points
+gradio-1   | INFO:DataFetcher:Using API source: polygon (Polygon key available: True)
+gradio-1   | INFO:DataFetcher:Fetching MSFT data from Polygon.io
+gradio-1   | WARNING:DataFetcher:Failed to fetch MSFT from Polygon.io: 403
+gradio-1   | INFO:DataFetcher:Fetching MSFT data from Yahoo Finance
+gradio-1   | Failed to get ticker 'MSFT' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - MSFT: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:Retry 1/3: Empty dataframe from Yahoo Finance for MSFT
+gradio-1   | Failed to get ticker 'MSFT' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - MSFT: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:Retry 2/3: Empty dataframe from Yahoo Finance for MSFT
+gradio-1   | Failed to get ticker 'MSFT' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - MSFT: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:No data found for MSFT in Yahoo Finance after 3 attempts
+gradio-1   | INFO:DataFetcher:Falling back to mock data for MSFT after Yahoo Finance attempts failed
+gradio-1   | INFO:DataFetcher:Generating mock data for MSFT from 2022-01-01 to 2022-12-31
+gradio-1   | INFO:DataFetcher:Generated mock data for MSFT with 260 data points
+gradio-1   | INFO:DataFetcher:Using API source: polygon (Polygon key available: True)
+gradio-1   | INFO:DataFetcher:Fetching GOOG data from Polygon.io
+gradio-1   | WARNING:DataFetcher:Failed to fetch GOOG from Polygon.io: 403
+gradio-1   | INFO:DataFetcher:Fetching GOOG data from Yahoo Finance
+gradio-1   | Failed to get ticker 'GOOG' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - GOOG: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:Retry 1/3: Empty dataframe from Yahoo Finance for GOOG
+gradio-1   | Failed to get ticker 'GOOG' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - GOOG: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:Retry 2/3: Empty dataframe from Yahoo Finance for GOOG
+gradio-1   | Failed to get ticker 'GOOG' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - GOOG: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:No data found for GOOG in Yahoo Finance after 3 attempts
+gradio-1   | INFO:DataFetcher:Falling back to mock data for GOOG after Yahoo Finance attempts failed
+gradio-1   | INFO:DataFetcher:Generating mock data for GOOG from 2022-01-01 to 2022-12-31
+gradio-1   | INFO:DataFetcher:Generated mock data for GOOG with 260 data points
+gradio-1   | 2022-02-07: BUY CREATE, 192.44, Signal: 1.00
+gradio-1   | 2022-02-08: BUY EXECUTED, 214.46
+gradio-1   | 2022-02-08: TRAILING STOP UPDATED: 214.36
+gradio-1   | 2022-02-09: TAKE PROFIT TRIGGERED @ 235.19
+gradio-1   | 2022-02-10: SELL EXECUTED, 220.73
+gradio-1   | 2022-02-10: TRADE PROFIT, GROSS: 6.28, NET: 6.28
+gradio-1   | 2022-02-10: BUY CREATE, 220.85, Signal: 1.00
+gradio-1   | 2022-02-11: BUY EXECUTED, 190.22
+gradio-1   | 2022-02-11: TRAILING STOP UPDATED: 190.23
+gradio-1   | 2022-02-14: STOP LOSS TRIGGERED @ 185.87
+gradio-1   | 2022-02-15: SELL EXECUTED, 212.45
+gradio-1   | 2022-02-15: TRADE PROFIT, GROSS: 22.23, NET: 22.23
+gradio-1   | 2022-02-15: BUY CREATE, 212.98, Signal: 1.00
+gradio-1   | 2022-02-16: BUY EXECUTED, 244.98
+gradio-1   | 2022-02-16: STOP LOSS TRIGGERED @ 243.91
+gradio-1   | 2022-02-17: SELL EXECUTED, 247.43
+gradio-1   | 2022-02-17: TRADE PROFIT, GROSS: 2.45, NET: 2.45
+gradio-1   | 2022-02-17: BUY CREATE, 247.86, Signal: 1.00
+gradio-1   | 2022-02-18: BUY EXECUTED, 224.44
+gradio-1   | 2022-02-18: STOP LOSS TRIGGERED @ 224.32
+gradio-1   | 2022-02-21: SELL EXECUTED, 217.11
+gradio-1   | 2022-02-21: TRADE PROFIT, GROSS: -7.32, NET: -7.32
+gradio-1   | 2022-02-21: BUY CREATE, 217.49, Signal: 1.00
+gradio-1   | 2022-02-22: BUY EXECUTED, 232.61
+gradio-1   | 2022-02-22: TAKE PROFIT TRIGGERED @ 232.94
+gradio-1   | 2022-02-23: SELL EXECUTED, 254.33
+gradio-1   | 2022-02-23: TRADE PROFIT, GROSS: 21.71, NET: 21.71
+gradio-1   | 2022-02-23: BUY CREATE, 254.60, Signal: 1.00
+gradio-1   | 2022-02-24: BUY EXECUTED, 274.97
+gradio-1   | 2022-02-24: STOP LOSS TRIGGERED @ 274.74
+gradio-1   | 2022-02-25: SELL EXECUTED, 285.73
+gradio-1   | 2022-02-25: TRADE PROFIT, GROSS: 10.77, NET: 10.77
+gradio-1   | 2022-02-25: BUY CREATE, 286.54, Signal: 1.00
+gradio-1   | 2022-02-28: BUY EXECUTED, 286.11
+gradio-1   | 2022-02-28: TAKE PROFIT TRIGGERED @ 286.56
+gradio-1   | 2022-03-01: SELL EXECUTED, 273.52
+gradio-1   | 2022-03-01: TRADE PROFIT, GROSS: -12.58, NET: -12.58
+gradio-1   | 2022-03-01: BUY CREATE, 275.65, Signal: 1.00
+gradio-1   | 2022-03-02: BUY EXECUTED, 262.48
+gradio-1   | 2022-03-02: STOP LOSS TRIGGERED @ 261.83
+gradio-1   | 2022-03-03: SELL EXECUTED, 289.72
+gradio-1   | 2022-03-03: TRADE PROFIT, GROSS: 27.23, NET: 27.23
+gradio-1   | 2022-03-03: BUY CREATE, 291.09, Signal: 1.00
+gradio-1   | 2022-03-04: BUY EXECUTED, 342.26
+gradio-1   | 2022-03-04: TAKE PROFIT TRIGGERED @ 342.72
+gradio-1   | 2022-03-07: SELL EXECUTED, 372.16
+gradio-1   | 2022-03-07: TRADE PROFIT, GROSS: 29.90, NET: 29.90
+gradio-1   | 2022-03-08: BUY CREATE, 338.56, Signal: 1.00
+gradio-1   | 2022-03-09: BUY EXECUTED, 309.44
+gradio-1   | 2022-03-09: TAKE PROFIT TRIGGERED @ 310.09
+gradio-1   | 2022-03-10: SELL EXECUTED, 322.49
+gradio-1   | 2022-03-10: TRADE PROFIT, GROSS: 13.05, NET: 13.05
+gradio-1   | 2022-03-10: BUY CREATE, 324.66, Signal: 1.00
+gradio-1   | 2022-03-11: BUY EXECUTED, 369.36
+gradio-1   | 2022-03-14: TAKE PROFIT TRIGGERED @ 406.99
+gradio-1   | 2022-03-15: SELL EXECUTED, 409.73
+gradio-1   | 2022-03-15: TRADE PROFIT, GROSS: 40.37, NET: 40.37
+gradio-1   | 2022-03-17: BUY CREATE, 402.84, Signal: 1.00
+gradio-1   | 2022-03-18: BUY EXECUTED, 416.85
+gradio-1   | 2022-03-18: STOP LOSS TRIGGERED @ 415.15
+gradio-1   | 2022-03-21: SELL EXECUTED, 446.46
+gradio-1   | 2022-03-21: TRADE PROFIT, GROSS: 29.61, NET: 29.61
+gradio-1   | INFO:DataFetcher:Using API source: polygon (Polygon key available: True)
+gradio-1   | INFO:DataFetcher:Fetching AAPL data from Polygon.io
+gradio-1   | WARNING:DataFetcher:Failed to fetch AAPL from Polygon.io: 403
+gradio-1   | INFO:DataFetcher:Fetching AAPL data from Yahoo Finance
+gradio-1   | Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - AAPL: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:Retry 1/3: Empty dataframe from Yahoo Finance for AAPL
+gradio-1   | Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - AAPL: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:Retry 2/3: Empty dataframe from Yahoo Finance for AAPL
+gradio-1   | Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - AAPL: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:No data found for AAPL in Yahoo Finance after 3 attempts
+gradio-1   | ERROR:DataFetcher:No data available for AAPL and mock data is disabled
+gradio-1   | ERROR:backtest.backtrader_engine:No data available for AAPL and mock data is disabled
+redis-1    | 1:M 04 May 2025 03:59:10.083 * 1 changes in 3600 seconds. Saving...
+redis-1    | 1:M 04 May 2025 03:59:10.099 * Background saving started by pid 20
+redis-1    | 20:C 04 May 2025 03:59:11.397 * DB saved on disk
+redis-1    | 20:C 04 May 2025 03:59:11.400 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+redis-1    | 1:M 04 May 2025 03:59:11.449 * Background saving terminated with success
+backend-1  | INFO:     172.18.0.4:37104 - "GET /portfolio HTTP/1.1" 200 OK
+backend-1  | INFO:     172.18.0.4:37096 - "GET /strategies HTTP/1.1" 200 OK
+gradio-1   | Traceback (most recent call last):
+gradio-1   |   File "/usr/local/lib/python3.9/site-packages/gradio/routes.py", line 422, in run_predict
+gradio-1   |     output = await app.get_blocks().process_api(
+gradio-1   |   File "/usr/local/lib/python3.9/site-packages/gradio/blocks.py", line 1326, in process_api
+gradio-1   |     data = self.postprocess_data(fn_index, result["prediction"], state)
+gradio-1   |   File "/usr/local/lib/python3.9/site-packages/gradio/blocks.py", line 1257, in postprocess_data
+gradio-1   |     assert isinstance(
+gradio-1   | AssertionError: <class 'gradio.layouts.Group'> Component with id 14 not a valid output component.
+gradio-1   | INFO:DataFetcher:Using API source: polygon (Polygon key available: True)
+gradio-1   | INFO:DataFetcher:Fetching AAPL data from Polygon.io
+gradio-1   | WARNING:DataFetcher:Failed to fetch AAPL from Polygon.io: 403
+gradio-1   | INFO:DataFetcher:Fetching AAPL data from Yahoo Finance
+gradio-1   | Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - AAPL: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:Retry 1/3: Empty dataframe from Yahoo Finance for AAPL
+gradio-1   | Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - AAPL: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:Retry 2/3: Empty dataframe from Yahoo Finance for AAPL
+gradio-1   | Failed to get ticker 'AAPL' reason: Expecting value: line 1 column 1 (char 0)
+gradio-1   | - AAPL: No timezone found, symbol may be delisted
+gradio-1   | WARNING:DataFetcher:No data found for AAPL in Yahoo Finance after 3 attempts
+gradio-1   | ERROR:DataFetcher:No data available for AAPL and mock data is disabled
+gradio-1   | ERROR:backtest.backtrader_engine:No data available for AAPL and mock data is disabled
+[Kgradio-1 exited with code 137
+backend-1  | INFO:     Shutting down
+backend-1  | INFO:     Waiting for application shutdown.
+backend-1  | INFO:     Application shutdown complete.
+backend-1  | INFO:     Finished server process [1]
+[Kbackend-1 exited with code 0
+redis-1    | 1:signal-handler (1746449689) Received SIGTERM scheduling shutdown...
+redis-1    | 1:M 05 May 2025 12:54:49.894 * User requested shutdown...
+redis-1    | 1:M 05 May 2025 12:54:49.894 * Calling fsync() on the AOF file.
+redis-1    | 1:M 05 May 2025 12:54:49.895 * Saving the final RDB snapshot before exiting.
+redis-1    | 1:M 05 May 2025 12:54:49.908 * DB saved on disk
+redis-1    | 1:M 05 May 2025 12:54:49.913 # Redis is now ready to exit, bye bye...
+[Kredis-1 exited with code 0

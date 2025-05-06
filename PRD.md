@@ -131,14 +131,21 @@ This platform leverages AI-powered, multi-agent architecture for automated tradi
 ---
 
 ### 8. Data Management
-- Polygon.io, Yahoo Finance for real-time market data
-- Redis (optional) for caching
+- Polygon.io S3 and API for efficient historical market data retrieval
+- Yahoo Finance for fundamental data
+- Redis for caching and inter-service communication
+- Database management UI for data refresh and maintenance
+- Multiple data source options with automatic fallback mechanisms
+- Thread-safe SQLite database with optimized connections
 
 ---
 
 ### 9. Security & Compliance
-- Secure storage of API credentials (environment variables)
+- Secure storage of API credentials in .env files (excluded from version control)
+- Environment variable templates for easy setup
 - Least privilege container permissions
+- Configurable environment for development, testing, and production
+- Separation of configuration from code
 
 ---
 

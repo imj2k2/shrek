@@ -1,4 +1,3 @@
-version: '3'
 services:
   backend:
     build: .
@@ -7,21 +6,38 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - POLYGON_API_KEY=${POLYGON_API_KEY:-demo}
+      - POLYGON_S3_ACCESS_KEY=${POLYGON_S3_ACCESS_KEY:-${POLYGON_API_KEY:-demo}}
+      - POLYGON_S3_SECRET_KEY=${POLYGON_S3_SECRET_KEY:-${POLYGON_API_KEY:-demo}}
+      - POLYGON_S3_FALLBACK=${POLYGON_S3_FALLBACK:-true}
       - ALPACA_API_KEY=${ALPACA_API_KEY:-demo}
       - ALPACA_API_SECRET=${ALPACA_API_SECRET:-demo}
       - BROKER_TYPE=${BROKER_TYPE:-mock}
-      - DEBUG_TRADING=true
+      - DEBUG_TRADING=${DEBUG_TRADING:-true}
+      - DB_PATH=/app/data/db/market_data.db
+    volumes:
+      - market-data:/app/data/db
     depends_on:
       - redis
     restart: on-failure
 
   gradio:
     build: .
-    command: python -m ui.gradio_ui
+    command: python -m ui.gradio_app
     ports:
       - "7860:7860"
     environment:
       - API_BASE_URL=http://backend:8000
+      - POLYGON_API_KEY=${POLYGON_API_KEY:-demo}
+      - POLYGON_S3_ACCESS_KEY=${POLYGON_S3_ACCESS_KEY:-${POLYGON_API_KEY:-demo}}
+      - POLYGON_S3_SECRET_KEY=${POLYGON_S3_SECRET_KEY:-${POLYGON_API_KEY:-demo}}
+      - POLYGON_S3_FALLBACK=${POLYGON_S3_FALLBACK:-true}
+      - ALPACA_API_KEY=${ALPACA_API_KEY:-demo}
+      - ALPACA_API_SECRET=${ALPACA_API_SECRET:-demo}
+      - BROKER_TYPE=${BROKER_TYPE:-mock}
+      - DEBUG_TRADING=${DEBUG_TRADING:-true}
+      - DB_PATH=/app/data/db/market_data.db
+    volumes:
+      - market-data:/app/data/db
     depends_on:
       - backend
     restart: on-failure
@@ -37,3 +53,4 @@ services:
 
 volumes:
   redis-data:
+  market-data:

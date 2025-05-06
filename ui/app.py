@@ -1,8 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from ui.gradio_ui import launch_gradio
+from ui.simple_ui import launch_gradio
 from ui.schemas import router as agent_router
 from ui.portfolio_api import router as portfolio_router
+from ui.database_api import router as database_router
+import logging
+import sys
+
+# Add parent directory to path to import from data module
+sys.path.append('/app')
+
+# Import data modules
+from data.startup import initialize as initialize_data
 
 app = FastAPI()
 
@@ -15,11 +24,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(agent_router)
-app.include_router(portfolio_router)
+# Include routers with appropriate prefixes
+app.include_router(agent_router, prefix="")
+app.include_router(portfolio_router, prefix="")
+app.include_router(database_router, prefix="")
 
 # We don't need to launch Gradio from here anymore
 # The Gradio UI is now launched independently in its own container
+
+# Initialize database and data synchronization
+try:
+    initialize_data()
+except Exception as e:
+    logging.error(f"Error initializing data components: {str(e)}")
+    # Continue even if initialization fails
 
 @app.get("/ping")
 def ping():

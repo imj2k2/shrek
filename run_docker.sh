@@ -1,13 +1,24 @@
 #!/bin/bash
 # run_docker.sh - Script to run the trading platform in Docker
 
-# Set default environment variables if not already set
-POLYGON_API_KEY="g2sSLO_cQpKCQPWuLkA2w3d35IoNDAse"
+# Load environment variables from .env file if it exists
+if [ -f ".env" ]; then
+  echo "Loading environment variables from .env file..."
+  set -a  # automatically export all variables
+  source .env
+  set +a  # stop automatically exporting
+else
+  echo "Warning: .env file not found. Using default values."
+  # You can create a .env file from the template with: cp .env.template .env
+fi
+
+# Set default values for environment variables if not set in .env
 export POLYGON_API_KEY=${POLYGON_API_KEY:-"demo"}
 export ALPACA_API_KEY=${ALPACA_API_KEY:-"demo"}
 export ALPACA_API_SECRET=${ALPACA_API_SECRET:-"demo"}
 export DISCORD_TOKEN=${DISCORD_TOKEN:-"demo"}
 export BROKER_TYPE=${BROKER_TYPE:-"mock"}
+export DEBUG_TRADING=${DEBUG_TRADING:-"true"}
 
 # Display banner
 echo "====================================================="
