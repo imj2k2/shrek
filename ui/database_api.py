@@ -94,14 +94,14 @@ async def get_db_status():
         
         # Get last sync dates
         last_sync_dates = {}
-        cursor.execute("SELECT source, data_type, sync_date FROM data_sync_log ORDER BY sync_date DESC LIMIT 10")
+        cursor.execute("SELECT source, data_type, end_date FROM data_sync_log WHERE status = 'success' ORDER BY end_date DESC LIMIT 10")
         sync_logs = cursor.fetchall()
         
         for log in sync_logs:
-            source, data_type, sync_date = log
+            source, data_type, end_date = log
             key = f"{source}_{data_type}"
             if key not in last_sync_dates:
-                last_sync_dates[key] = sync_date
+                last_sync_dates[key] = end_date
         
         return {
             "status": "success",
