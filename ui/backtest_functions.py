@@ -80,7 +80,20 @@ def run_backtest(symbols, start_date, end_date, initial_capital, strategy_type):
             results_text += f"Initial Capital: ${initial_capital:,.2f}\n\n"
             
             # Add performance metrics
-            if "performance" in result:
+            if "results" in result and "metrics" in result["results"]:
+                perf = result["results"]["metrics"]
+                results_text += f"Final Portfolio Value: ${perf.get('final_value', perf.get('total_value', 0)):,.2f}\n"
+                results_text += f"Total Return: {perf.get('total_return', 0) * 100:.2f}%\n"
+                results_text += f"Annual Return: {perf.get('annual_return', 0) * 100:.2f}%\n"
+                results_text += f"Sharpe Ratio: {perf.get('sharpe_ratio', 0):.2f}\n"
+                results_text += f"Max Drawdown: {perf.get('max_drawdown', 0) * 100:.2f}%\n"
+                results_text += f"Win Rate: {perf.get('win_rate', 0) * 100:.2f}%\n"
+                # Add additional metrics if available
+                if 'total_trades' in perf:
+                    results_text += f"Total Trades: {perf.get('total_trades', 0)}\n"
+                if 'profit_factor' in perf:
+                    results_text += f"Profit Factor: {perf.get('profit_factor', 0):.2f}\n"
+            elif "performance" in result:
                 perf = result["performance"]
                 results_text += f"Final Portfolio Value: ${perf.get('final_value', 0):,.2f}\n"
                 results_text += f"Total Return: {perf.get('total_return', 0) * 100:.2f}%\n"
@@ -93,7 +106,56 @@ def run_backtest(symbols, start_date, end_date, initial_capital, strategy_type):
             
             # Create equity curve plot if data is available
             equity_curve = None
-            if "equity_curve" in result:
+            if "results" in result and "equity_curve" in result["results"]:
+                equity_data = result["results"]["equity_curve"]
+                # If we have raw equity curve data, process it
+                if isinstance(equity_data, list) and equity_data:
+                    try:
+                        # Convert to dataframe for easier plotting
+                        df = pd.DataFrame(equity_data)
+                        if 'date' in df.columns and 'equity' in df.columns:
+                            # Convert date strings to datetime objects
+                            df['date'] = pd.to_datetime(df['date'])
+                            
+                            # Create Plotly figure
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatter(
+                                x=df['date'],
+                                y=df['equity'],
+                                mode='lines',
+                                name='Portfolio Value'
+                            ))
+                            
+                            # Add benchmark if available
+                            if 'benchmark' in df.columns:
+                                fig.add_trace(go.Scatter(
+                                    x=df['date'],
+                                    y=df['benchmark'],
+                                    mode='lines',
+                                    name='Benchmark (SPY)',
+                                    line=dict(dash='dash')
+                                ))
+                            
+                            # Customize layout
+                            fig.update_layout(
+                                title=f"{strategy_type} Strategy Backtest Results",
+                                xaxis_title="Date",
+                                yaxis_title="Portfolio Value ($)",
+                                legend=dict(
+                                    orientation="h",
+                                    yanchor="bottom",
+                                    y=1.02,
+                                    xanchor="right",
+                                    x=1
+                                )
+                            )
+                            
+                            equity_curve = fig
+                    except Exception as e:
+                        logger.error(f"Error creating equity curve plot: {e}")
+                        # Fall back to default plotting logic
+                        equity_curve = None
+            elif "equity_curve" in result:
                 try:
                     # Convert equity curve data to DataFrame
                     equity_data = result["equity_curve"]

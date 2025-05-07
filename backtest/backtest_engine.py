@@ -13,6 +13,7 @@ from agents.options_agent import OptionsAgent
 from agents.crypto_agent import CryptoAgent
 from risk.advanced_risk_manager import AdvancedRiskManager
 from data.data_fetcher import DataFetcher
+from data.database import get_market_db
 from data.storage import Storage
 
 class BacktestResult:
@@ -348,9 +349,12 @@ class Backtester:
                     # Prepare data for agent
                     symbol_data = self._prepare_data_for_agent(data[symbol], date, agent)
                     
-                    # Ensure symbol is in the data
-                    if 'symbol' not in symbol_data:
-                        symbol_data['symbol'] = symbol
+                    # Always set the correct symbol in the data - this is critical
+                    # This ensures the agent always gets the correct symbol regardless of data source
+                    symbol_data['symbol'] = symbol
+                    
+                    # Log that we're explicitly setting the symbol
+                    self.logger.info(f"Setting explicit symbol in agent data: {symbol}")
                     
                     # Generate signal
                     try:
@@ -366,28 +370,28 @@ class Backtester:
                     if force_trade_generation and idx % 10 == 0:  # Every 10th day
                         # Alternate between buy and sell signals
                         action = 'buy' if idx % 20 == 0 else 'sell'
-                        self.logger.info(f"FORCING {action} SIGNAL FOR TESTING")
+                        self.logger.info(f"FORCING {action} SIGNAL FOR TESTING on {date}")
                         signal = {
                             'action': action,
                             'symbol': symbol,
-                            'qty': 5,
+                            'qty': 10,
                             'price': float(symbol_data.get('close', [100.0])[-1]),
                             'strategy': 'forced_test',
                             'reason': f'Forced {action} for testing on day {idx}'
                         }
                     
-                    # Ensure signal has the symbol
-                    if signal and 'symbol' not in signal:
+                    # Ensure signal has the correct symbol (override any 'UNKNOWN' symbols)
+                    if signal:
+                        # Always set the correct symbol from the backtest parameters
                         signal['symbol'] = symbol
                     
                     # Debug log the signal
                     self.logger.info(f"Signal for {symbol} on {date.strftime('%Y-%m-%d')}: {signal.get('action', 'none')} with strength {signal.get('net_strength', 0)}")
                     
                     # Execute signal if it's a buy or sell
-                    if signal.get('action') in ['buy', 'sell']:
-                        # Make sure symbol is in the signal
-                        if 'symbol' not in signal:
-                            signal['symbol'] = symbol
+                    if signal and signal.get('action') in ['buy', 'sell']:
+                        # Double-check the symbol is correct
+                        signal['symbol'] = symbol
                             
                         # Force a minimum quantity if not specified
                         if signal.get('qty', 0) <= 0:
@@ -476,6 +480,16 @@ class Backtester:
             # Store in memory cache for future use
             self.data_cache[cache_key] = df
             return df
+        
+        # Check database for existing data first
+        try:
+            df_db = get_market_db().get_stock_prices(symbol, start_date=start_date_str, end_date=end_date_str)
+            if df_db is not None and not df_db.empty:
+                self.logger.info(f"Using database data for {symbol}")
+                self.data_cache[cache_key] = df_db
+                return df_db
+        except Exception as e:
+            self.logger.warning(f"Database fetch failed for {symbol}: {str(e)}")
         
         # Fetch data using DataFetcher
         try:
@@ -593,7 +607,13 @@ class Backtester:
                 return None
             
             # Create standardized data dictionary with metadata
-            data = {'symbol': hist_data.name if hasattr(hist_data, 'name') else 'UNKNOWN',
+            # Use the actual symbol from the DataFrame name if available, otherwise from the calling context
+            symbol_name = hist_data.name if hasattr(hist_data, 'name') and hist_data.name else None
+            
+            # Log the symbol information for debugging
+            self.logger.info(f"Preparing data with symbol: {symbol_name}")
+            
+            data = {'symbol': symbol_name,  # Will be overridden by the correct symbol in run_backtest
                     'date': date.strftime('%Y-%m-%d')}
             
             # Add agent_type information based on the agent class or run parameters
@@ -661,9 +681,13 @@ class Backtester:
             
         except Exception as e:
             self.logger.error(f"Error preparing data for agent: {str(e)}")
+            # Get the symbol name from the DataFrame if available
+            symbol_name = hist_data.name if hasattr(hist_data, 'name') and hist_data.name else None
+            self.logger.info(f"Using symbol {symbol_name} in error fallback data")
+            
             # Create a minimal data structure to prevent crashes
             return {
-                'symbol': hist_data.name if hasattr(hist_data, 'name') else 'UNKNOWN',
+                'symbol': symbol_name,  # Will be overridden by the correct symbol in run_backtest
                 'date': date.strftime('%Y-%m-%d'),
                 'close': [100.0],  # Placeholder data
                 'open': [100.0],
@@ -678,10 +702,32 @@ class Backtester:
         """Update portfolio with latest prices"""
         for symbol, position in portfolio['positions'].items():
             if symbol in data and date in data[symbol].index:
-                current_price = data[symbol].loc[date, 'close']
-                position['current_price'] = current_price
-                position['market_value'] = position['quantity'] * current_price
-                position['profit_loss'] = position['market_value'] - position['cost_basis']
+                try:
+                    # Try lowercase 'close' first (polygon API format)
+                    if 'close' in data[symbol].columns:
+                        current_price = data[symbol].loc[date, 'close']
+                    # Try uppercase 'Close' (Yahoo format)
+                    elif 'Close' in data[symbol].columns:
+                        current_price = data[symbol].loc[date, 'Close']
+                    # Try c (some APIs use this)
+                    elif 'c' in data[symbol].columns:
+                        current_price = data[symbol].loc[date, 'c']
+                    else:
+                        # If no recognized price column, use the first numeric column
+                        numeric_cols = data[symbol].select_dtypes(include=['number']).columns
+                        if len(numeric_cols) > 0:
+                            current_price = data[symbol].loc[date, numeric_cols[0]]
+                        else:
+                            self.logger.error(f"No price data found for {symbol} on {date}")
+                            continue
+                            
+                    position['current_price'] = current_price
+                    position['market_value'] = position['quantity'] * current_price
+                    position['profit_loss'] = position['market_value'] - position['cost_basis']
+                except Exception as e:
+                    self.logger.error(f"Error updating prices for {symbol}: {str(e)}")
+                    self.logger.error(f"Available columns: {data[symbol].columns.tolist()}")
+                    # Continue with other positions
     
     def _execute_trade(self, portfolio: Dict[str, Any], signal: Dict[str, Any], price_data: pd.Series, date: pd.Timestamp) -> Dict[str, Any]:
         """Execute a trade based on a signal"""
@@ -691,41 +737,76 @@ class Backtester:
         
         # Log the signal for debugging
         self.logger.info(f"Processing signal: {action} {quantity} {symbol} at {date}")
-        self.logger.info(f"Signal details: {signal}")
         
-        if not action or not symbol or quantity <= 0:
-            self.logger.warning(f"Invalid trade parameters: action={action}, symbol={symbol}, quantity={quantity}")
+        # Validate trade parameters
+        if not action:
+            self.logger.warning(f"Missing action in signal: {signal}")
             return None
+        if not symbol:
+            self.logger.warning(f"Missing symbol in signal: {signal}")
+            return None
+        if quantity <= 0:
+            # Fix quantity if it's invalid
+            self.logger.warning(f"Invalid quantity {quantity} in signal, setting to default 10")
+            quantity = 10
+            signal['qty'] = quantity
         
         # Get current price with slippage - handle different data formats safely
         try:
-            # Try to get price from different possible formats
-            if isinstance(price_data, dict) and 'close' in price_data:
+            # Debug price_data to understand its structure
+            self.logger.info(f"Price data type for {symbol}: {type(price_data)}")
+            if isinstance(price_data, pd.Series):
+                self.logger.info(f"Series index: {price_data.index.tolist()}")
+            elif isinstance(price_data, pd.DataFrame):
+                self.logger.info(f"DataFrame columns: {price_data.columns.tolist()}")
+            elif isinstance(price_data, dict):
+                self.logger.info(f"Dict keys: {list(price_data.keys())}")
+                
+            # First try to get price from the signal itself (most reliable)
+            if 'price' in signal and signal['price'] is not None:
+                current_price = float(signal['price'])
+                self.logger.info(f"Using price from signal: {current_price}")
+            # Then try various formats of price_data
+            elif isinstance(price_data, dict) and 'close' in price_data:
                 current_price = float(price_data['close'])
+                self.logger.info(f"Using close from dict: {current_price}")
+            elif isinstance(price_data, dict) and 'Close' in price_data:
+                current_price = float(price_data['Close'])
+                self.logger.info(f"Using Close from dict: {current_price}")
             elif isinstance(price_data, pd.Series) and 'close' in price_data.index:
                 current_price = float(price_data['close'])
+                self.logger.info(f"Using close from Series index: {current_price}")
+            elif isinstance(price_data, pd.Series) and 'Close' in price_data.index:
+                current_price = float(price_data['Close'])
+                self.logger.info(f"Using Close from Series index: {current_price}")
             elif isinstance(price_data, pd.Series) and len(price_data) > 0:
                 # If it's a Series but doesn't have 'close', try to get the first value
                 try:
                     current_price = float(price_data.iloc[-1])  # Get the last value
+                    self.logger.info(f"Using last value from Series: {current_price}")
                 except (IndexError, ValueError):
                     current_price = float(price_data.iloc[0])  # Get the first value
+                    self.logger.info(f"Using first value from Series: {current_price}")
             elif isinstance(price_data, pd.DataFrame) and 'close' in price_data.columns:
                 current_price = float(price_data['close'].iloc[-1])
+                self.logger.info(f"Using close from DataFrame: {current_price}")
+            elif isinstance(price_data, pd.DataFrame) and 'Close' in price_data.columns:
+                current_price = float(price_data['Close'].iloc[-1])
+                self.logger.info(f"Using Close from DataFrame: {current_price}")
             elif isinstance(price_data, pd.DataFrame) and len(price_data.columns) > 0:
                 # If it's a DataFrame but doesn't have 'close', try the first numeric column
                 numeric_cols = price_data.select_dtypes(include=['number']).columns
                 if len(numeric_cols) > 0:
                     current_price = float(price_data[numeric_cols[0]].iloc[-1])
+                    self.logger.info(f"Using first numeric column {numeric_cols[0]}: {current_price}")
                 else:
-                    raise ValueError("No numeric columns found in price data")
-            elif 'price' in signal and signal['price'] is not None:
-                # Use price from signal if available
-                current_price = float(signal['price'])
+                    self.logger.warning(f"No numeric columns found in price data for {symbol}, using default price")
+                    current_price = 100.0  # Default price for testing
             else:
-                # If we can't determine price, use a symbol-specific default price
-                self.logger.warning(f"Could not determine price from data for {symbol}, using default")
-                current_price = self._get_default_symbol_price(symbol)
+                # If we can't determine price, use a fixed price for testing
+                self.logger.warning(f"Could not determine price from data for {symbol}, using default of 100.0")
+                current_price = 100.0  # Default price for testing
+            
         except (KeyError, TypeError, ValueError) as e:
             self.logger.warning(f"Error getting price data: {e}. Using default price.")
             current_price = self._get_default_symbol_price(symbol)  # Use symbol-specific default price

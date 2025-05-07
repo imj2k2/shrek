@@ -59,8 +59,8 @@ def run_stock_screener(universe, min_price, max_price, min_volume, min_volatilit
             db = get_market_db()
             logger.info("Using market database for stock screening")
             using_db = True
-        except (ImportError, NameError):
-            logger.warning("Market database not available, using direct Yahoo Finance API")
+        except Exception as e:
+            logger.warning(f"Market database error: {str(e)}. Using direct Yahoo Finance API")
             using_db = False
         
         # Process each symbol
@@ -242,6 +242,46 @@ def run_stock_screener(universe, min_price, max_price, min_volume, min_volatilit
             results = results[:max_results]
         
         logger.info(f"Stock screener found {len(results)} matching stocks")
+        
+        # If no results were found, try using Yahoo Finance as a fallback
+        if not results and using_db:
+            logger.info("No results from database, trying Yahoo Finance as fallback")
+            # Run a simplified version of the screener with YF
+            for symbol in symbols_to_screen[:20]:  # Limit to first 20 symbols for performance
+                try:
+                    stock = yf.Ticker(symbol)
+                    info = stock.info
+                    if not info:
+                        continue
+                        
+                    # Get basic info
+                    current_price = info.get('regularMarketPrice') or info.get('previousClose')
+                    if not current_price:
+                        continue
+                    
+                    # Apply basic price filter only
+                    if min_price <= current_price <= max_price:
+                        # Add symbol to results
+                        results.append({
+                            'symbol': symbol,
+                            'price': current_price,
+                            'change_pct': info.get('regularMarketChangePercent', 0),
+                            'volume': info.get('regularMarketVolume', 0),
+                            'market_cap': info.get('marketCap', 0),
+                            'pe_ratio': info.get('trailingPE', 0),
+                            'eps': info.get('trailingEps', 0),
+                            'dividend_yield': info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0,
+                            'year_high': info.get('fiftyTwoWeekHigh', 0),
+                            'year_low': info.get('fiftyTwoWeekLow', 0),
+                            'rsi': 50,  # Default value as YF doesn't provide RSI
+                            'position': 'long'
+                        })
+                except Exception as e:
+                    logger.warning(f"Error fetching data for {symbol} from YF: {str(e)}")
+                    continue
+            
+            logger.info(f"Yahoo Finance fallback found {len(results)} matching stocks")
+        
         return results
     
     except Exception as e:
@@ -251,8 +291,12 @@ def run_stock_screener(universe, min_price, max_price, min_volume, min_volatilit
 def add_stocks_to_backtest(results, allow_short):
     """Add selected stocks to backtest"""
     try:
+        logger.info(f"Screener found {len(results)} matches")
+        
+        # Return empty dataframe if no results
         if not results:
-            return pd.DataFrame()
+            # Ensure we return an empty dataframe with correct columns for display
+            return pd.DataFrame(columns=['Symbol', 'Price', 'Change %', 'Volume', 'Market Cap', 'P/E', 'EPS', 'Dividend %', '52W High', '52W Low', 'RSI', 'Position'])
         
         # Convert to DataFrame if it's not already
         if isinstance(results, list):

@@ -47,3 +47,4 @@ data/db/
 # Temporary files
 *.tmp
 .DS_Store
+test/*

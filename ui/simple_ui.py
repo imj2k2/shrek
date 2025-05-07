@@ -35,7 +35,7 @@ def create_ui():
     with gr.Blocks(title="Shrek Trading Platform") as demo:
         gr.Markdown("# Shrek Trading Platform")
         
-        with gr.Tabs() as tabs:
+        with gr.Tabs(selected=0) as tabs:
             # Stock Screener Tab
             with gr.Tab("Stock Screener"):
                 with gr.Row():

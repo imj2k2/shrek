@@ -12,14 +12,14 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:8080/health",
+					"raw": "http://localhost:8080/ping",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "8080",
 					"path": [
-						"health"
+						"ping"
 					]
 				},
 				"description": "Check if the backend API is running"
@@ -30,10 +30,15 @@
 			"name": "Run Backtest",
 			"request": {
 				"method": "POST",
-				"header": [],
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"symbols\": [\"AAPL\", \"MSFT\"],\n    \"start_date\": \"2023-01-01\",\n    \"end_date\": \"2023-12-31\",\n    \"initial_capital\": 100000,\n    \"agent_type\": \"customizable_agent\",\n    \"use_mock_data\": true,\n    \"strategy_params\": {\n        \"momentum_enabled\": true,\n        \"mean_reversion_enabled\": true,\n        \"breakout_enabled\": false,\n        \"volatility_enabled\": false,\n        \"momentum_weight\": 0.5,\n        \"mean_reversion_weight\": 0.5,\n        \"breakout_weight\": 0,\n        \"volatility_weight\": 0,\n        \"rsi_period\": 14,\n        \"rsi_overbought\": 70,\n        \"rsi_oversold\": 30,\n        \"ma_fast_period\": 10,\n        \"ma_slow_period\": 30,\n        \"bb_period\": 20,\n        \"bb_std\": 2,\n        \"max_position_size\": 2,\n        \"stop_loss\": 5,\n        \"take_profit\": 10,\n        \"trailing_stop\": true\n    }\n}",
+					"raw": "{\n  \"agent_type\": \"Momentum\",\n  \"symbols\": [\"TSLA\"],\n  \"start_date\": \"2023-01-01\",\n  \"end_date\": \"2024-01-01\",\n  \"timeframe\": \"day\",\n  \"initial_capital\": 100000.0,\n  \"description\": \"Momentum test for TSLA\",\n  \"save_strategy\": false,\n  \"max_drawdown\": 0.1,\n  \"trailing_stop\": 0.05,\n  \"max_position_size\": 0.2\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -52,7 +57,7 @@
 						"run"
 					]
 				},
-				"description": "Run a backtest with customizable parameters"
+				"description": "Run a backtest for TSLA using Momentum"
 			},
 			"response": []
 		},
@@ -60,10 +65,15 @@
 			"name": "Run Backtest with Real Data",
 			"request": {
 				"method": "POST",
-				"header": [],
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"symbols\": [\"AAPL\", \"MSFT\"],\n    \"start_date\": \"2023-01-01\",\n    \"end_date\": \"2023-12-31\",\n    \"initial_capital\": 100000,\n    \"agent_type\": \"customizable_agent\",\n    \"use_mock_data\": false,\n    \"strategy_params\": {\n        \"momentum_enabled\": true,\n        \"mean_reversion_enabled\": true,\n        \"breakout_enabled\": false,\n        \"volatility_enabled\": false,\n        \"momentum_weight\": 0.5,\n        \"mean_reversion_weight\": 0.5,\n        \"breakout_weight\": 0,\n        \"volatility_weight\": 0,\n        \"rsi_period\": 14,\n        \"rsi_overbought\": 70,\n        \"rsi_oversold\": 30,\n        \"ma_fast_period\": 10,\n        \"ma_slow_period\": 30,\n        \"bb_period\": 20,\n        \"bb_std\": 2,\n        \"max_position_size\": 2,\n        \"stop_loss\": 5,\n        \"take_profit\": 10,\n        \"trailing_stop\": true\n    }\n}",
+					"raw": "{\n  \"agent_type\": \"Momentum\",\n  \"symbols\": [\"TSLA\"],\n  \"start_date\": \"2023-01-01\",\n  \"end_date\": \"2024-01-01\",\n  \"timeframe\": \"day\",\n  \"initial_capital\": 100000.0,\n  \"description\": \"Real data test for TSLA\",\n  \"save_strategy\": false,\n  \"max_drawdown\": 0.1,\n  \"trailing_stop\": 0.05,\n  \"max_position_size\": 0.2\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -82,7 +92,7 @@
 						"run"
 					]
 				},
-				"description": "Run a backtest with real market data (no mock data)"
+				"description": "Run a backtest for TSLA with real DB data"
 			},
 			"response": []
 		},
@@ -157,6 +167,62 @@
 				"description": "Get a specific strategy by ID"
 			},
 			"response": []
+		},
+		{
+			"name": "Refresh Database",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"data_source\": \"polygon_s3\",\n  \"symbols\": [\"AAPL\", \"MSFT\"],\n  \"days\": 200,\n  \"reset_db\": false\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/database/refresh",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"database",
+						"refresh"
+					]
+				},
+				"description": "Refresh database for AAPL and MSFT with 200 days"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Database Status",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8080/database/status",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"database",
+						"status"
+					]
+				},
+				"description": "Get current database status and table counts"
+			},
+			"response": []
 		}
 	],
 	"event": [
@@ -182,6 +248,11 @@
 	"variable": [
 		{
 			"key": "strategy_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "symbol_id",
 			"value": "",
 			"type": "string"
 		}

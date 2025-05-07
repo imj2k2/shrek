@@ -151,12 +151,25 @@ class AdvancedRiskManager:
         
         return None
     
-    def _check_position_sizes(self, positions: List[Dict[str, Any]], equity: float) -> List[Dict[str, Any]]:
+    def _check_position_sizes(self, positions, equity: float) -> List[Dict[str, Any]]:
         """Check if any positions exceed maximum size"""
         alerts = []
         
-        # Handle case where positions is not a list of dictionaries
-        if not positions or not isinstance(positions, list):
+        # Handle case where positions is a dictionary instead of a list
+        if isinstance(positions, dict):
+            # Convert dictionary of positions to list for processing
+            positions_list = []
+            for symbol, pos_data in positions.items():
+                if isinstance(pos_data, dict):
+                    pos_data['symbol'] = symbol
+                    positions_list.append(pos_data)
+            positions = positions_list
+        
+        # Handle case where positions is not a list or dict
+        if not positions:
+            self.logger.warning(f"Empty positions data")
+            return alerts
+        elif not isinstance(positions, list):
             self.logger.warning(f"Invalid positions format: {type(positions)}")
             return alerts
             
@@ -200,12 +213,25 @@ class AdvancedRiskManager:
         
         return alerts
     
-    def _check_trailing_stops(self, positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _check_trailing_stops(self, positions) -> List[Dict[str, Any]]:
         """Update and check trailing stops for all positions"""
         alerts = []
         
-        # Handle case where positions is not a list of dictionaries
-        if not positions or not isinstance(positions, list):
+        # Handle case where positions is a dictionary instead of a list
+        if isinstance(positions, dict):
+            # Convert dictionary of positions to list for processing
+            positions_list = []
+            for symbol, pos_data in positions.items():
+                if isinstance(pos_data, dict):
+                    pos_data['symbol'] = symbol
+                    positions_list.append(pos_data)
+            positions = positions_list
+        
+        # Handle case where positions is not a list or dict
+        if not positions:
+            self.logger.warning(f"Empty positions data in trailing stops")
+            return alerts
+        elif not isinstance(positions, list):
             self.logger.warning(f"Invalid positions format in trailing stops: {type(positions)}")
             return alerts
             

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ui.simple_ui import launch_gradio
 from ui.schemas import router as agent_router
+from ui.schemas import router as backtest_router
 from ui.portfolio_api import router as portfolio_router
 from ui.database_api import router as database_router
 import logging
@@ -26,6 +27,7 @@ app.add_middleware(
 
 # Include routers with appropriate prefixes
 app.include_router(agent_router, prefix="")
+app.include_router(backtest_router, prefix="/backtest")
 app.include_router(portfolio_router, prefix="")
 app.include_router(database_router, prefix="")
 

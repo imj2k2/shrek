@@ -60,9 +60,9 @@ def perform_initial_data_sync():
     if not last_sync_date or (datetime.now() - datetime.strptime(last_sync_date, '%Y-%m-%d')).days >= 1:
         logger.info("Performing initial data sync")
         
-        # Sync the last 7 days of price data
+        # Sync the last 200 days of price data
         end_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-        start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=200)).strftime('%Y-%m-%d')
         
         try:
             # Try S3 first for yesterday's data
