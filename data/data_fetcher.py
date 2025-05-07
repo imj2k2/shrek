@@ -12,6 +12,21 @@ class DataFetcher:
         self.polygon_key = os.getenv("POLYGON_API_KEY", "")
         self.logger = logging.getLogger("DataFetcher")
         
+    def fetch_daily_bars(self, symbol: str, start_date=None, end_date=None, source: str = None):
+        """Fetch daily price bars for a stock symbol
+        
+        Args:
+            symbol: Stock symbol
+            start_date: Start date for data
+            end_date: End date for data
+            source: Data source ('polygon' or 'yahoo')
+            
+        Returns:
+            DataFrame with daily OHLCV data
+        """
+        # This is a wrapper around fetch_stock_data to maintain compatibility with data_sync.py
+        return self.fetch_stock_data(symbol, start_date, end_date, source, use_mock_data=True)
+        
     def fetch_stock_data(self, symbol: str, start_date=None, end_date=None, source: str = None, use_mock_data=True):
         """Fetch stock data from either Polygon.io or Yahoo Finance
         

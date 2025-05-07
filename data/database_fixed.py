@@ -68,22 +68,6 @@ class MarketDatabase:
                 
             cursor = conn.cursor()
             
-            # Create data_sync_log table to track synchronization activities
-            cursor.execute("""
-            CREATE TABLE IF NOT EXISTS data_sync_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source TEXT NOT NULL,
-                data_type TEXT NOT NULL,
-                start_date TEXT,
-                end_date TEXT,
-                symbols TEXT,
-                status TEXT NOT NULL,
-                records_processed INTEGER,
-                error_message TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """)
-            
             # Stock prices table
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS stock_prices (
@@ -175,70 +159,6 @@ class MarketDatabase:
             logger.info("Database tables created successfully")
         except Exception as e:
             logger.error(f"Error creating database tables: {str(e)}")
-    
-    def store_stock_prices(self, df, symbol, source='unknown'):
-        """Store stock price data in the database
-        
-        Args:
-            df: DataFrame with price data (must have open, high, low, close, volume columns)
-            symbol: Stock symbol
-            source: Data source identifier
-            
-        Returns:
-            int: Number of records stored
-        """
-        try:
-            conn = self._get_connection()
-            if conn is None:
-                logger.error(f"Cannot store stock prices for {symbol}: No database connection")
-                return 0
-                
-            cursor = conn.cursor()
-            records_stored = 0
-            
-            # Process each row in the DataFrame
-            for date, row in df.iterrows():
-                # Convert date to string if it's a datetime
-                if isinstance(date, (datetime, pd.Timestamp)):
-                    date_str = date.strftime('%Y-%m-%d')
-                else:
-                    date_str = str(date)
-                
-                # Check if record already exists
-                cursor.execute(
-                    "SELECT id FROM stock_prices WHERE symbol = ? AND date = ?", 
-                    (symbol, date_str)
-                )
-                existing = cursor.fetchone()
-                
-                if existing:
-                    # Update existing record
-                    cursor.execute(
-                        """UPDATE stock_prices 
-                        SET open = ?, high = ?, low = ?, close = ?, volume = ?, source = ?, updated_at = CURRENT_TIMESTAMP 
-                        WHERE symbol = ? AND date = ?""",
-                        (float(row['open']), float(row['high']), float(row['low']), float(row['close']), 
-                         int(row['volume']), source, symbol, date_str)
-                    )
-                else:
-                    # Insert new record
-                    cursor.execute(
-                        """INSERT INTO stock_prices 
-                        (symbol, date, open, high, low, close, volume, source, created_at, updated_at) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
-                        (symbol, date_str, float(row['open']), float(row['high']), float(row['low']), 
-                         float(row['close']), int(row['volume']), source)
-                    )
-                
-                records_stored += 1
-            
-            conn.commit()
-            logger.info(f"Stored {records_stored} price records for {symbol} from {source}")
-            return records_stored
-            
-        except Exception as e:
-            logger.error(f"Error storing price data for {symbol}: {str(e)}")
-            return 0
     
     def get_stock_prices(self, symbol, start_date=None, end_date=None):
         """Get stock price data for a symbol with optional date range"""
@@ -512,96 +432,35 @@ class MarketDatabase:
         try:
             conn = self._get_connection()
             if conn is None:
-                return {"error": "No database connection"}
+                logger.error("Cannot get database stats: No database connection")
+                return {}
                 
             cursor = conn.cursor()
             
-            # Get list of tables
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            tables = cursor.fetchall()
-            
-            # Get count of records in each table
             stats = {}
+            tables = ['stock_prices', 'stock_fundamentals', 'options_data', 'crypto_prices', 'data_sources']
+            
             for table in tables:
-                table_name = table[0]
-                cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
                 count = cursor.fetchone()[0]
-                stats[table_name] = count
+                stats[f"{table}_count"] = count
+                
+                # Get unique symbols for relevant tables
+                if table in ['stock_prices', 'stock_fundamentals', 'options_data', 'crypto_prices']:
+                    cursor.execute(f"SELECT COUNT(DISTINCT symbol) FROM {table}")
+                    unique_symbols = cursor.fetchone()[0]
+                    stats[f"{table}_symbols"] = unique_symbols
+                    
+                    # Get date range for stock_prices
+                    if table == 'stock_prices' and count > 0:
+                        cursor.execute(f"SELECT MIN(date), MAX(date) FROM {table}")
+                        min_date, max_date = cursor.fetchone()
+                        stats[f"{table}_date_range"] = f"{min_date} to {max_date}"
             
             return stats
         except Exception as e:
             logger.error(f"Error getting database stats: {str(e)}")
-            return {"error": str(e)}
-            
-    def log_data_sync(self, source, data_type, start_date=None, end_date=None, symbols=None, status="success", records_processed=0, error_message=None):
-        """Log a data synchronization activity
-        
-        Args:
-            source: Data source (e.g., 'polygon_api', 'polygon_s3', 'yahoo')
-            data_type: Type of data (e.g., 'prices', 'fundamentals')
-            start_date: Start date for the sync period
-            end_date: End date for the sync period
-            symbols: Comma-separated list of symbols that were synced
-            status: Status of the sync operation ('success', 'partial', 'error')
-            records_processed: Number of records processed
-            error_message: Error message if any
-            
-        Returns:
-            bool: True if log was created successfully, False otherwise
-        """
-        try:
-            conn = self._get_connection()
-            if conn is None:
-                logger.error("Failed to get database connection for logging data sync")
-                return False
-                
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-            INSERT INTO data_sync_log 
-            (source, data_type, start_date, end_date, symbols, status, records_processed, error_message) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (source, data_type, start_date, end_date, symbols, status, records_processed, error_message))
-            
-            conn.commit()
-            return True
-        except Exception as e:
-            logger.error(f"Error logging data sync: {str(e)}")
-            return False
-            
-    def get_last_sync_date(self, source, data_type):
-        """Get the date of the last successful data synchronization
-        
-        Args:
-            source: Data source (e.g., 'polygon_api', 'polygon_s3', 'yahoo')
-            data_type: Type of data (e.g., 'prices', 'fundamentals')
-            
-        Returns:
-            str: Date of the last successful sync in YYYY-MM-DD format, or None if no sync found
-        """
-        try:
-            conn = self._get_connection()
-            if conn is None:
-                logger.error("Failed to get database connection for retrieving last sync date")
-                return None
-                
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-            SELECT end_date FROM data_sync_log 
-            WHERE source = ? AND data_type = ? AND status IN ('success', 'partial')
-            ORDER BY end_date DESC LIMIT 1
-            """, (source, data_type))
-            
-            result = cursor.fetchone()
-            
-            if result and result[0]:
-                return result[0]
-            else:
-                return None
-        except Exception as e:
-            logger.error(f"Error getting last sync date: {str(e)}")
-            return None
+            return {}
 
 # Singleton instance
 _market_db_instance = None

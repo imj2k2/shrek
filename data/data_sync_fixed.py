@@ -18,8 +18,6 @@ import tempfile
 from datetime import datetime, timedelta
 import json
 import yfinance as yf
-import numpy as np
-import random
 
 from data.database import get_market_db
 from data.data_fetcher import DataFetcher
@@ -147,34 +145,6 @@ class DataSynchronizer:
                 
         return results
         
-    def generate_sample_data(self, symbol, date_obj):
-        """
-        Generate sample OHLCV data for a symbol
-        
-        Args:
-            symbol: Stock symbol
-            date_obj: Date object
-            
-        Returns:
-            DataFrame with sample OHLCV data
-        """
-        # Generate a realistic base price for the symbol
-        base_price = random.uniform(50.0, 500.0)
-        
-        # Create a DataFrame with sample data
-        daily_df = pd.DataFrame(index=[date_obj])
-        daily_df['open'] = base_price * (1 + random.uniform(-0.01, 0.01))
-        daily_df['high'] = daily_df['open'] * (1 + random.uniform(0.005, 0.02))
-        daily_df['low'] = daily_df['open'] * (1 - random.uniform(0.005, 0.02))
-        daily_df['close'] = base_price * (1 + random.uniform(-0.015, 0.015))
-        daily_df['volume'] = int(random.uniform(500000, 5000000))
-        
-        # Ensure high is the highest price and low is the lowest
-        daily_df['high'] = np.maximum(daily_df['high'], np.maximum(daily_df['open'], daily_df['close']))
-        daily_df['low'] = np.minimum(daily_df['low'], np.minimum(daily_df['open'], daily_df['close']))
-        
-        return daily_df
-        
     def sync_stock_prices_from_polygon_s3(self, symbols=None, date=None):
         """
         Sync stock price data from Polygon.io S3 bucket using day_aggs_v1
@@ -246,98 +216,53 @@ class DataSynchronizer:
                         logger.warning(f"Empty CSV file for {date}")
                         raise ValueError(f"Empty CSV file for {date}")
                 
-                # Check if the expected columns exist in the DataFrame
-                # The actual columns are ['ticker', 'volume', 'open', 'close', 'high', 'low', 'window_start', 'transactions']
-                expected_columns = ['ticker', 'open', 'high', 'low', 'close', 'volume']
-                missing_columns = [col for col in expected_columns if col not in df.columns]
-                
-                if missing_columns:
-                    logger.warning(f"Missing expected columns in day_aggs_v1 file: {missing_columns}")
-                    logger.info(f"Available columns: {df.columns.tolist()}")
-                    logger.info("Generating sample data for all symbols instead")
+                # Process each symbol
+                for symbol in symbols:
+                    if symbol in processed_symbols:
+                        logger.info(f"Skipping already processed symbol: {symbol}")
+                        continue
+                        
+                    processed_symbols.add(symbol)
                     
-                    # Generate sample data for all symbols
-                    for symbol in symbols:
-                        if symbol in processed_symbols:
-                            logger.info(f"Skipping already processed symbol: {symbol}")
-                            continue
-                            
-                        processed_symbols.add(symbol)
+                    try:
+                        logger.info(f"Processing price data for {symbol} from day_aggs_v1 for {date}")
                         
-                        try:
-                            logger.info(f"Generating sample data for {symbol} for {date}")
-                            
-                            # Create sample OHLCV data
-                            daily_df = self.generate_sample_data(symbol, date_obj)
-                            
-                            # Store in the database
-                            records = self.db.store_stock_prices(daily_df, symbol, source='polygon_s3_sample')
-                            results["records_stored"] += records
-                            results["symbols_processed"] += 1
-                            
-                            # Add to the success list
-                            results["successes"].append({
-                                "symbol": symbol,
-                                "records": records,
-                                "sample": True
-                            })
-                        except Exception as e:
-                            logger.error(f"Error generating sample data for {symbol}: {str(e)}")
-                            results["failures"].append({
-                                "symbol": symbol,
-                                "reason": f"Sample data generation error: {str(e)}"
-                            })
-                else:
-                    # Process each symbol with the actual data
-                    for symbol in symbols:
-                        if symbol in processed_symbols:
-                            logger.info(f"Skipping already processed symbol: {symbol}")
-                            continue
-                            
-                        processed_symbols.add(symbol)
+                        # Filter for the specific symbol
+                        symbol_df = df[df['T'] == symbol.upper()]
                         
-                        try:
-                            logger.info(f"Processing price data for {symbol} from day_aggs_v1 for {date}")
-                            
-                            # Filter for the specific symbol
-                            symbol_df = df[df['ticker'] == symbol.upper()]
-                            
-                            if symbol_df.empty:
-                                logger.warning(f"No data for {symbol} in the day_aggs_v1 file")
-                                
-                                # Generate sample data for this symbol
-                                logger.info(f"Generating sample data for {symbol} for {date}")
-                                daily_df = self.generate_sample_data(symbol, date_obj)
-                            else:
-                                # day_aggs_v1 already has OHLCV format, just need to use the columns
-                                # ticker, open, high, low, close, volume
-                                daily_df = pd.DataFrame()
-                                daily_df['open'] = symbol_df['open']
-                                daily_df['high'] = symbol_df['high']
-                                daily_df['low'] = symbol_df['low']
-                                daily_df['close'] = symbol_df['close']
-                                daily_df['volume'] = symbol_df['volume']
-                                
-                                # Add date as index
-                                daily_df.index = [date_obj]
-                            
-                            # Store in the database
-                            records = self.db.store_stock_prices(daily_df, symbol, source='polygon_s3')
-                            results["records_stored"] += records
-                            results["symbols_processed"] += 1
-                            
-                            # Add to the success list
-                            results["successes"].append({
-                                "symbol": symbol,
-                                "records": records
-                            })
-                        except Exception as e:
-                            logger.error(f"Error processing {symbol} from day_aggs_v1: {str(e)}")
-                            results["failures"].append({
-                                "symbol": symbol,
-                                "reason": str(e)
-                            })
-            
+                        if symbol_df.empty:
+                            logger.warning(f"No data for {symbol} in the day_aggs_v1 file")
+                            continue
+                        
+                        # day_aggs_v1 already has OHLCV format, just need to rename columns
+                        # T=ticker, o=open, h=high, l=low, c=close, v=volume
+                        daily_df = pd.DataFrame()
+                        daily_df['open'] = symbol_df['o']
+                        daily_df['high'] = symbol_df['h']
+                        daily_df['low'] = symbol_df['l']
+                        daily_df['close'] = symbol_df['c']
+                        daily_df['volume'] = symbol_df['v']
+                        
+                        # Add date as index
+                        daily_df.index = [date_obj]
+                        
+                        # Store in the database
+                        records = self.db.store_stock_prices(daily_df, symbol, source='polygon_s3')
+                        results["records_stored"] += records
+                        results["symbols_processed"] += 1
+                        
+                        # Add to the success list
+                        results["successes"].append({
+                            "symbol": symbol,
+                            "records": records
+                        })
+                    except Exception as e:
+                        logger.error(f"Error processing {symbol} from day_aggs_v1: {str(e)}")
+                        results["failures"].append({
+                            "symbol": symbol,
+                            "reason": str(e)
+                        })
+                
             except ClientError as e:
                 logger.error(f"S3 client error downloading day_aggs_v1: {str(e)}")
                 

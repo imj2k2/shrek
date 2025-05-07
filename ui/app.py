@@ -6,6 +6,7 @@ from ui.schemas import router as backtest_router
 from ui.portfolio_api import router as portfolio_router
 from ui.database_api import router as database_router
 from ui.screener_api import router as screener_router
+from ui.data_sync_api import router as data_sync_router
 import logging
 import sys
 
@@ -32,6 +33,7 @@ app.include_router(backtest_router, prefix="/backtest")
 app.include_router(portfolio_router, prefix="")
 app.include_router(database_router, prefix="")
 app.include_router(screener_router, prefix="")
+app.include_router(data_sync_router, prefix="")
 
 # We don't need to launch Gradio from here anymore
 # The Gradio UI is now launched independently in its own container

@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta
 
 from data.database import get_market_db
-from data.data_sync import get_data_synchronizer, start_data_sync_scheduler
+from data.data_sync import get_data_synchronizer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,8 +36,11 @@ def initialize_data_sync():
     """Initialize data synchronization"""
     logger.info("Initializing data synchronization")
     
+    # Get the data synchronizer instance
+    synchronizer = get_data_synchronizer()
+    
     # Start the scheduler
-    success = start_data_sync_scheduler()
+    success = synchronizer.start_scheduled_sync()
     
     if success:
         logger.info("Data synchronization scheduler started")

@@ -247,8 +247,7 @@ class DataSynchronizer:
                         raise ValueError(f"Empty CSV file for {date}")
                 
                 # Check if the expected columns exist in the DataFrame
-                # The actual columns are ['ticker', 'volume', 'open', 'close', 'high', 'low', 'window_start', 'transactions']
-                expected_columns = ['ticker', 'open', 'high', 'low', 'close', 'volume']
+                expected_columns = ['T', 'o', 'h', 'l', 'c', 'v']
                 missing_columns = [col for col in expected_columns if col not in df.columns]
                 
                 if missing_columns:
@@ -300,7 +299,7 @@ class DataSynchronizer:
                             logger.info(f"Processing price data for {symbol} from day_aggs_v1 for {date}")
                             
                             # Filter for the specific symbol
-                            symbol_df = df[df['ticker'] == symbol.upper()]
+                            symbol_df = df[df['T'] == symbol.upper()]
                             
                             if symbol_df.empty:
                                 logger.warning(f"No data for {symbol} in the day_aggs_v1 file")
@@ -309,14 +308,14 @@ class DataSynchronizer:
                                 logger.info(f"Generating sample data for {symbol} for {date}")
                                 daily_df = self.generate_sample_data(symbol, date_obj)
                             else:
-                                # day_aggs_v1 already has OHLCV format, just need to use the columns
-                                # ticker, open, high, low, close, volume
+                                # day_aggs_v1 already has OHLCV format, just need to rename columns
+                                # T=ticker, o=open, h=high, l=low, c=close, v=volume
                                 daily_df = pd.DataFrame()
-                                daily_df['open'] = symbol_df['open']
-                                daily_df['high'] = symbol_df['high']
-                                daily_df['low'] = symbol_df['low']
-                                daily_df['close'] = symbol_df['close']
-                                daily_df['volume'] = symbol_df['volume']
+                                daily_df['open'] = symbol_df['o']
+                                daily_df['high'] = symbol_df['h']
+                                daily_df['low'] = symbol_df['l']
+                                daily_df['close'] = symbol_df['c']
+                                daily_df['volume'] = symbol_df['v']
                                 
                                 # Add date as index
                                 daily_df.index = [date_obj]

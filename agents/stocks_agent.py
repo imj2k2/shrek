@@ -120,15 +120,50 @@ class StocksAgent:
             return {'action': 'hold', 'reason': 'Missing price data'}
         
         try:
-            # Convert data to pandas Series if it's a list
-            close = pd.Series(data['close']) if isinstance(data['close'], list) else data['close']
-            high = pd.Series(data['high']) if 'high' in data and isinstance(data['high'], list) else None
-            low = pd.Series(data['low']) if 'low' in data and isinstance(data['low'], list) else None
-            volume = pd.Series(data['volume']) if 'volume' in data and isinstance(data['volume'], list) else None
+            # Handle different data types for price data
+            if isinstance(data['close'], list):
+                close = pd.Series(data['close'])
+            elif isinstance(data['close'], np.ndarray):
+                close = pd.Series(data['close'])
+            else:
+                close = data['close']
+                
+            # Handle high, low, volume with the same approach
+            if 'high' in data:
+                if isinstance(data['high'], list) or isinstance(data['high'], np.ndarray):
+                    high = pd.Series(data['high'])
+                else:
+                    high = data['high']
+            else:
+                high = None
+                
+            if 'low' in data:
+                if isinstance(data['low'], list) or isinstance(data['low'], np.ndarray):
+                    low = pd.Series(data['low'])
+                else:
+                    low = data['low']
+            else:
+                low = None
+                
+            if 'volume' in data:
+                if isinstance(data['volume'], list) or isinstance(data['volume'], np.ndarray):
+                    volume = pd.Series(data['volume'])
+                else:
+                    volume = data['volume']
+            else:
+                volume = None
+                
             symbol = data.get('symbol', 'UNKNOWN')
             
             # Get the current price for signal generation
-            current_price = float(close.iloc[-1]) if hasattr(close, 'iloc') and len(close) > 0 else 0.0
+            if hasattr(close, 'iloc') and len(close) > 0:
+                current_price = float(close.iloc[-1])
+            elif isinstance(close, np.ndarray) and len(close) > 0:
+                current_price = float(close[-1])
+            elif hasattr(close, '__len__') and len(close) > 0:
+                current_price = float(close[-1])
+            else:
+                current_price = 0.0
             
             # Check if we are running as value_agent (backward compatibility)
             agent_type = data.get('agent_type', None)
