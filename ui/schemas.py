@@ -204,10 +204,16 @@ def run_backtest(request: BacktestRequest):
         logging.info(f"Creating agent of type: {request.agent_type}")
         
         try:
-            # Initialize StocksAgent with debug mode enabled
+            # Initialize StocksAgent with appropriate mode based on strategy
             agent = StocksAgent()
-            agent.debug_enabled = True  # Enable debug mode to force trade generation
-            logging.info(f"Successfully created StocksAgent with debug mode for backtesting")
+            
+            # Only enable debug mode if explicitly requested or if no strategy is specified
+            if request.strategy_name and 'debug' not in request.strategy_name.lower():
+                agent.debug_enabled = False
+                logging.info(f"Using normal strategy mode for {request.strategy_name}")
+            else:
+                agent.debug_enabled = True
+                logging.info(f"Using debug mode for backtesting (forced trade generation)")
             
             # Just for logging purposes, note the requested agent type
             if request.agent_type not in ["stocks_agent", "value_agent"]:
@@ -218,11 +224,12 @@ def run_backtest(request: BacktestRequest):
             agent = StocksAgent()
         
         # Capture and store the agent's criteria/parameters for display in UI
+        description = "StocksAgent with forced trade generation enabled (debug mode)" if agent.debug_enabled else f"StocksAgent using {request.strategy_name} strategy"
         agent_criteria = {
             "agent_type": request.agent_type,
             "strategies": agent.strategies if hasattr(agent, "strategies") else {},
             "debug_mode": agent.debug_enabled,
-            "description": "StocksAgent with forced trade generation enabled (debug mode)"
+            "description": description
         }
         
         # Initialize risk manager if parameters are provided

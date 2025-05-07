@@ -276,6 +276,9 @@ class Backtester:
         if not strategy_name:
             strategy_name = f"{agent.__class__.__name__}_{timeframe}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
         
+        # Store the strategy name in the instance for later use
+        self.strategy_name = strategy_name
+        
         self.logger.info(f"Starting backtest for {strategy_name} from {start_date} to {end_date}")
         
         # Fetch historical data for all symbols
@@ -352,6 +355,10 @@ class Backtester:
                     # Always set the correct symbol in the data - this is critical
                     # This ensures the agent always gets the correct symbol regardless of data source
                     symbol_data['symbol'] = symbol
+                    
+                    # Pass the strategy name to the agent
+                    if self.strategy_name:
+                        symbol_data['strategy_name'] = self.strategy_name
                     
                     # Log that we're explicitly setting the symbol
                     self.logger.info(f"Setting explicit symbol in agent data: {symbol}")

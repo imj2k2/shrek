@@ -1,13 +1,13 @@
 {
 	"info": {
-		"_postman_id": "fd8a7b9e-6c1c-4a3a-b1ee-ca9b9f0e8f5d",
+		"_postman_id": "12345678-1234-1234-1234-123456789abc",
 		"name": "Shrek Trading Platform API",
-		"description": "API endpoints for testing the Shrek trading platform's backtesting functionality",
+		"description": "API collection for the Shrek Trading Platform",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
 		{
-			"name": "Backend Health Check",
+			"name": "Health Check",
 			"request": {
 				"method": "GET",
 				"header": [],
@@ -22,7 +22,7 @@
 						"ping"
 					]
 				},
-				"description": "Check if the backend API is running"
+				"description": "Check if the API is running"
 			},
 			"response": []
 		},
@@ -73,7 +73,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n  \"agent_type\": \"stocks_agent\",\n  \"strategy_name\": \"mean_reversion\",\n  \"symbols\": [\"AAPL\"],\n  \"start_date\": \"2023-01-01\",\n  \"end_date\": \"2024-01-01\",\n  \"timeframe\": \"day\",\n  \"initial_capital\": 100000.0,\n  \"description\": \"Mean Reversion test for AAPL\",\n  \"save_strategy\": false,\n  \"max_drawdown\": 0.15,\n  \"trailing_stop\": 0.03,\n  \"max_position_size\": 0.25\n}\n}",
+					"raw": "{\n  \"agent_type\": \"stocks_agent\",\n  \"strategy_name\": \"mean_reversion\",\n  \"symbols\": [\"AAPL\"],\n  \"start_date\": \"2023-01-01\",\n  \"end_date\": \"2024-01-01\",\n  \"timeframe\": \"day\",\n  \"initial_capital\": 100000.0,\n  \"description\": \"Mean Reversion test for AAPL\",\n  \"save_strategy\": false,\n  \"max_drawdown\": 0.15,\n  \"trailing_stop\": 0.03,\n  \"max_position_size\": 0.25\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -108,7 +108,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n  \"agent_type\": \"stocks_agent\",\n  \"strategy_name\": \"breakout\",\n  \"symbols\": [\"MSFT\"],\n  \"start_date\": \"2023-01-01\",\n  \"end_date\": \"2024-01-01\",\n  \"timeframe\": \"day\",\n  \"initial_capital\": 100000.0,\n  \"description\": \"Breakout test for MSFT\",\n  \"save_strategy\": false,\n  \"max_drawdown\": 0.12,\n  \"trailing_stop\": 0.04,\n  \"max_position_size\": 0.3\n}\n}",
+					"raw": "{\n  \"agent_type\": \"stocks_agent\",\n  \"strategy_name\": \"breakout\",\n  \"symbols\": [\"MSFT\"],\n  \"start_date\": \"2023-01-01\",\n  \"end_date\": \"2024-01-01\",\n  \"timeframe\": \"day\",\n  \"initial_capital\": 100000.0,\n  \"description\": \"Breakout test for MSFT\",\n  \"save_strategy\": false,\n  \"max_drawdown\": 0.12,\n  \"trailing_stop\": 0.04,\n  \"max_position_size\": 0.3\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -143,7 +143,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n  \"agent_type\": \"Momentum\",\n  \"symbols\": [\"AAPL\", \"MSFT\", \"TSLA\", \"AMZN\"],\n  \"start_date\": \"2023-06-01\",\n  \"end_date\": \"2023-12-31\",\n  \"timeframe\": \"day\",\n  \"initial_capital\": 200000.0,\n  \"description\": \"Multi-symbol portfolio test\",\n  \"save_strategy\": true,\n  \"max_drawdown\": 0.15,\n  \"trailing_stop\": 0.05,\n  \"max_position_size\": 0.2\n}",
+					"raw": "{\n  \"agent_type\": \"stocks_agent\",\n  \"strategy_name\": \"momentum\",\n  \"symbols\": [\"AAPL\", \"MSFT\", \"TSLA\", \"NVDA\", \"AMZN\"],\n  \"start_date\": \"2023-01-01\",\n  \"end_date\": \"2024-01-01\",\n  \"timeframe\": \"day\",\n  \"initial_capital\": 100000.0,\n  \"description\": \"Multi-symbol portfolio test\",\n  \"save_strategy\": false,\n  \"max_drawdown\": 0.15,\n  \"trailing_stop\": 0.05,\n  \"max_position_size\": 0.2\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -162,114 +162,7 @@
 						"run"
 					]
 				},
-				"description": "Run a backtest with multiple symbols in a portfolio"
-			},
-			"response": []
-		},
-		{
-			"name": "Backtest - Short Timeframe (3 months)",
-			"request": {
-				"method": "POST",
-				"header": [
-					{
-						"key": "Content-Type",
-						"value": "application/json"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"agent_type\": \"Momentum\",\n  \"symbols\": [\"NVDA\"],\n  \"start_date\": \"2023-10-01\",\n  \"end_date\": \"2023-12-31\",\n  \"timeframe\": \"day\",\n  \"initial_capital\": 50000.0,\n  \"description\": \"Short timeframe test for NVDA\",\n  \"save_strategy\": false,\n  \"max_drawdown\": 0.1,\n  \"trailing_stop\": 0.05,\n  \"max_position_size\": 0.5\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "http://localhost:8080/backtest/run",
-					"protocol": "http",
-					"host": [
-						"localhost"
-					],
-					"port": "8080",
-					"path": [
-						"backtest",
-						"run"
-					]
-				},
-				"description": "Run a backtest with a short timeframe (3 months)"
-			},
-			"response": []
-		},
-		{
-			"name": "Save Strategy",
-			"request": {
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"strategy\": {\n        \"name\": \"Momentum RSI Strategy\",\n        \"description\": \"A strategy that combines momentum and RSI indicators\",\n        \"agent_type\": \"customizable_agent\",\n        \"parameters\": {\n            \"momentum_enabled\": true,\n            \"mean_reversion_enabled\": true,\n            \"breakout_enabled\": false,\n            \"volatility_enabled\": false,\n            \"momentum_weight\": 0.5,\n            \"mean_reversion_weight\": 0.5,\n            \"breakout_weight\": 0,\n            \"volatility_weight\": 0,\n            \"rsi_period\": 14,\n            \"rsi_overbought\": 70,\n            \"rsi_oversold\": 30,\n            \"ma_fast_period\": 10,\n            \"ma_slow_period\": 30,\n            \"max_position_size\": 2,\n            \"stop_loss\": 5,\n            \"take_profit\": 10,\n            \"trailing_stop\": true\n        },\n        \"performance\": {\n            \"total_return\": 15.2,\n            \"sharpe_ratio\": 1.3,\n            \"max_drawdown\": 8.5,\n            \"win_rate\": 55.0\n        },\n        \"test_period\": {\n            \"start_date\": \"2023-01-01\",\n            \"end_date\": \"2023-12-31\",\n            \"symbols\": [\"AAPL\", \"MSFT\"]\n        }\n    }\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "http://localhost:8080/strategy/",
-					"protocol": "http",
-					"host": [
-						"localhost"
-					],
-					"port": "8080",
-					"path": [
-						"strategy",
-						""
-					]
-				},
-				"description": "Save a trading strategy"
-			},
-			"response": []
-		},
-		{
-			"name": "Get Strategies",
-			"request": {
-				"method": "GET",
-				"header": [],
-				"url": {
-					"raw": "http://localhost:8080/strategy/",
-					"protocol": "http",
-					"host": [
-						"localhost"
-					],
-					"port": "8080",
-					"path": [
-						"strategy",
-						""
-					]
-				},
-				"description": "Get all saved strategies"
-			},
-			"response": []
-		},
-		{
-			"name": "Get Strategy by ID",
-			"request": {
-				"method": "GET",
-				"header": [],
-				"url": {
-					"raw": "http://localhost:8080/strategy/{{strategy_id}}",
-					"protocol": "http",
-					"host": [
-						"localhost"
-					],
-					"port": "8080",
-					"path": [
-						"strategy",
-						"{{strategy_id}}"
-					]
-				},
-				"description": "Get a specific strategy by ID"
+				"description": "Run a backtest for a portfolio of multiple symbols"
 			},
 			"response": []
 		},
@@ -414,7 +307,7 @@
 			"response": []
 		},
 		{
-			"name": "Get Database Status",
+			"name": "Database Status",
 			"request": {
 				"method": "GET",
 				"header": [],
@@ -430,41 +323,9 @@
 						"status"
 					]
 				},
-				"description": "Get current database status and table counts"
+				"description": "Get database status and statistics"
 			},
 			"response": []
-		}
-	],
-	"event": [
-		{
-			"listen": "prerequest",
-			"script": {
-				"type": "text/javascript",
-				"exec": [
-					""
-				]
-			}
-		},
-		{
-			"listen": "test",
-			"script": {
-				"type": "text/javascript",
-				"exec": [
-					""
-				]
-			}
-		}
-	],
-	"variable": [
-		{
-			"key": "strategy_id",
-			"value": "",
-			"type": "string"
-		},
-		{
-			"key": "symbol_id",
-			"value": "",
-			"type": "string"
 		}
 	]
 }

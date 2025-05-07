@@ -67,8 +67,7 @@ class StocksAgent:
     def generate_signals(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate trading signals based on multiple strategies"""
         # Add debugging to track the signal generation process
-        self.logger.info(f"Generating signals for {data.get('symbol', 'UNKNOWN')}")
-        
+        self.logger.info(f"Generating signals for {data.get('symbol', 'UNKNOWN')}")        
         # Use the debug_enabled attribute instead of checking environment directly
         # This allows setting debug mode programmatically from schemas.py
         
@@ -101,6 +100,20 @@ class StocksAgent:
             
             self.logger.info(f"Generated forced buy signal: {buy_signal}")
             return buy_signal
+            
+        # Check if a specific strategy was requested
+        requested_strategy = data.get('strategy_name', '').lower()
+        if requested_strategy and requested_strategy != 'debug_forced':
+            self.logger.info(f"Using requested strategy: {requested_strategy}")
+            # Enable only the requested strategy if it exists in our strategies dictionary
+            for strategy_name in self.strategies:
+                if strategy_name.lower() in requested_strategy:
+                    self.strategies[strategy_name]['enabled'] = True
+                    self.strategies[strategy_name]['weight'] = 1.0  # Give it full weight
+                    self.logger.info(f"Enabled {strategy_name} strategy with weight 1.0")
+                else:
+                    self.strategies[strategy_name]['enabled'] = False
+                    self.logger.info(f"Disabled {strategy_name} strategy")
             
         if not data or 'close' not in data:
             self.logger.error("Invalid data format: missing 'close' prices")
@@ -621,6 +634,12 @@ class StocksAgent:
             signals['price'] = price
             signals['stop_loss'] = price * (1 - stop_loss_pct)
             
+            # Add the strategy name if it was specified
+            if data.get('strategy_name'):
+                signals['strategy'] = data.get('strategy_name')
+            
+            return signals
+        
         # If selling, we'd determine how much of existing position to sell
         # For now, just use a fixed percentage
         elif signals['action'] == 'sell':
