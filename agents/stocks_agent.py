@@ -1,11 +1,36 @@
 from indicators import rsi, macd, bollinger, atr, vwap, moving_averages
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 import os
-from mcp.protocol import MCPMessage
-from datetime import datetime
+import json
 import logging
+from datetime import datetime
+
+# Utility function for safe indexing of arrays/series
+def safe_idx(data: Union[pd.Series, np.ndarray, list], idx: int):
+    """Safely access elements from pandas Series, NumPy arrays, or lists
+    
+    Args:
+        data: Data structure to access (pandas Series, NumPy array, or list)
+        idx: Index to access (negative indexing supported)
+        
+    Returns:
+        The value at the specified index or None if not available
+    """
+    try:
+        if isinstance(data, pd.Series):
+            if data.empty:
+                return None
+            return data.iloc[idx]
+        elif isinstance(data, (np.ndarray, list)):
+            if len(data) == 0:
+                return None
+            return data[idx]
+        else:
+            return None
+    except (IndexError, KeyError):
+        return None
 
 class StocksAgent:
     """Agent for stock trading strategies including momentum, mean reversion, and breakout"""
@@ -106,60 +131,132 @@ class StocksAgent:
         if requested_strategy and requested_strategy != 'debug_forced':
             self.logger.info(f"Using requested strategy: {requested_strategy}")
             # Enable only the requested strategy if it exists in our strategies dictionary
+            found_strategy = False
             for strategy_name in self.strategies:
                 if strategy_name.lower() in requested_strategy:
                     self.strategies[strategy_name]['enabled'] = True
                     self.strategies[strategy_name]['weight'] = 1.0  # Give it full weight
                     self.logger.info(f"Enabled {strategy_name} strategy with weight 1.0")
+                    found_strategy = True
                 else:
                     self.strategies[strategy_name]['enabled'] = False
                     self.logger.info(f"Disabled {strategy_name} strategy")
+            
+            # If no matching strategy was found, enable all strategies
+            if not found_strategy:
+                self.logger.warning(f"No matching strategy found for '{requested_strategy}', enabling all strategies")
+                for strategy_name in self.strategies:
+                    self.strategies[strategy_name]['enabled'] = True
+                    self.logger.info(f"Enabled {strategy_name} strategy with default weight")
+            
+            # Log the active strategies
+            active_strategies = [s for s in self.strategies if self.strategies[s]['enabled']]
+            self.logger.info(f"Active strategies: {active_strategies}")
+            
+            # If no strategies are enabled, force at least one to be active
+            if not any(self.strategies[s]['enabled'] for s in self.strategies):
+                self.logger.warning("No strategies enabled, enabling momentum strategy as fallback")
+                self.strategies['momentum']['enabled'] = True
+                self.strategies['momentum']['weight'] = 1.0
             
         if not data or 'close' not in data:
             self.logger.error("Invalid data format: missing 'close' prices")
             return {'action': 'hold', 'reason': 'Missing price data'}
         
         try:
-            # Handle different data types for price data
-            if isinstance(data['close'], list):
-                close = pd.Series(data['close'])
-            elif isinstance(data['close'], np.ndarray):
-                close = pd.Series(data['close'])
-            else:
-                close = data['close']
-                
-            # Handle high, low, volume with the same approach
-            if 'high' in data:
-                if isinstance(data['high'], list) or isinstance(data['high'], np.ndarray):
-                    high = pd.Series(data['high'])
+            # More robust handling of different data types for price data
+            try:
+                # Always ensure we have pandas Series with proper index for all data
+                if 'close' in data:
+                    # First ensure close data is a pandas Series
+                    if isinstance(data['close'], list):
+                        close = pd.Series(data['close'])
+                    elif isinstance(data['close'], np.ndarray):
+                        close = pd.Series(data['close'])
+                    elif isinstance(data['close'], pd.Series):
+                        close = data['close'].copy()  # Make a copy to avoid modifying original
+                    else:
+                        close = pd.Series([data['close']] if np.isscalar(data['close']) else data['close'])
                 else:
-                    high = data['high']
-            else:
-                high = None
+                    self.logger.error("Missing close price data")
+                    return {'action': 'hold', 'reason': 'Missing close price data'}
+            
+                # Create a numeric index if needed
+                if not hasattr(close, 'index') or len(close.index) == 0:
+                    close.index = range(len(close))
                 
-            if 'low' in data:
-                if isinstance(data['low'], list) or isinstance(data['low'], np.ndarray):
-                    low = pd.Series(data['low'])
-                else:
-                    low = data['low']
-            else:
-                low = None
+                # Process other data with the same index as close for alignment
+                date_index = close.index
                 
-            if 'volume' in data:
-                if isinstance(data['volume'], list) or isinstance(data['volume'], np.ndarray):
-                    volume = pd.Series(data['volume'])
+                # High prices
+                if 'high' in data:
+                    if isinstance(data['high'], list):
+                        high = pd.Series(data['high'], index=date_index[:len(data['high'])])
+                    elif isinstance(data['high'], np.ndarray):
+                        high = pd.Series(data['high'], index=date_index[:len(data['high'])])
+                    elif isinstance(data['high'], pd.Series):
+                        high = data['high'].copy()
+                    else:
+                        high = pd.Series([data['high']] if np.isscalar(data['high']) else data['high'], index=date_index[:1 if np.isscalar(data['high']) else len(data['high'])])
                 else:
-                    volume = data['volume']
-            else:
-                volume = None
+                    # If no high data, use close data as a fallback
+                    high = close.copy()
+                    self.logger.warning("No high price data, using close prices instead")
+                
+                # Open prices
+                if 'open' in data:
+                    if isinstance(data['open'], list):
+                        open_data = pd.Series(data['open'], index=date_index[:len(data['open'])])
+                    elif isinstance(data['open'], np.ndarray):
+                        open_data = pd.Series(data['open'], index=date_index[:len(data['open'])])
+                    elif isinstance(data['open'], pd.Series):
+                        open_data = data['open'].copy()
+                    else:
+                        open_data = pd.Series([data['open']] if np.isscalar(data['open']) else data['open'], index=date_index[:1 if np.isscalar(data['open']) else len(data['open'])])
+                else:
+                    # If no open data, use close data as a fallback
+                    open_data = close.copy()
+                    self.logger.warning("No open price data, using close prices instead")
+                
+                # Low prices
+                if 'low' in data:
+                    if isinstance(data['low'], list):
+                        low = pd.Series(data['low'], index=date_index[:len(data['low'])])
+                    elif isinstance(data['low'], np.ndarray):
+                        low = pd.Series(data['low'], index=date_index[:len(data['low'])])
+                    elif isinstance(data['low'], pd.Series):
+                        low = data['low'].copy()
+                    else:
+                        low = pd.Series([data['low']] if np.isscalar(data['low']) else data['low'], index=date_index[:1 if np.isscalar(data['low']) else len(data['low'])])
+                else:
+                    # If no low data, use close data as a fallback
+                    low = close.copy()
+                    self.logger.warning("No low price data, using close prices instead")
+                
+                # Volume
+                if 'volume' in data:
+                    if isinstance(data['volume'], list):
+                        volume = pd.Series(data['volume'], index=date_index[:len(data['volume'])])
+                    elif isinstance(data['volume'], np.ndarray):
+                        volume = pd.Series(data['volume'], index=date_index[:len(data['volume'])])
+                    elif isinstance(data['volume'], pd.Series):
+                        volume = data['volume'].copy()
+                    else:
+                        volume = pd.Series([data['volume']] if np.isscalar(data['volume']) else data['volume'], index=date_index[:1 if np.isscalar(data['volume']) else len(data['volume'])])
+                else:
+                    # If no volume data, create dummy volume (1s)
+                    volume = pd.Series(np.ones(len(close)), index=close.index)
+                    self.logger.warning("No volume data, using placeholder values")
+            except Exception as e:
+                self.logger.error(f"Error preprocessing price data: {str(e)}")
+                return {'action': 'hold', 'reason': f'Data preprocessing error: {str(e)}'}
                 
             symbol = data.get('symbol', 'UNKNOWN')
             
             # Get the current price for signal generation
-            if hasattr(close, 'iloc') and len(close) > 0:
-                current_price = float(close.iloc[-1])
-            elif isinstance(close, np.ndarray) and len(close) > 0:
-                current_price = float(close[-1])
+            # Use safe_idx to handle any data type
+            if len(close) > 0:
+                current_price = float(safe_idx(close, -1))
             elif hasattr(close, '__len__') and len(close) > 0:
                 current_price = float(close[-1])
             else:
@@ -235,14 +332,9 @@ class StocksAgent:
             # Store last signals
             self.last_signals = final_signals
             
-            # Send to MCP if available
-            if self.mcp:
-                message = MCPMessage(
-                    sender="stocks_agent",
-                    message_type="signal",
-                    content=final_signals
-                )
-                self.mcp.send_message(message)
+            # Log signals but don't send to MCP (removed due to missing dependency)
+            self.logger.info(f"Generated signals for {symbol}: {final_signals['action']}")
+            # We've removed the MCP messaging to fix import errors
             
             return final_signals
             
@@ -281,24 +373,30 @@ class StocksAgent:
             rs = avg_gain / avg_loss
             rsi = 100 - (100 / (1 + rs))
             
-            # Get the latest RSI value
-            latest_rsi = rsi.iloc[-1] if not rsi.empty else None
+            # Get the latest RSI value - handle both pandas Series and NumPy arrays
+            if isinstance(rsi, pd.Series):
+                # Use the safe_idx utility for consistent handling
+                latest_rsi = safe_idx(rsi, -1)
+            elif isinstance(rsi, np.ndarray) and len(rsi) > 0:
+                latest_rsi = rsi[-1]
+            else:
+                latest_rsi = None
             
             if latest_rsi is not None:
-                # Oversold condition (potential buy) - Make more aggressive
-                if latest_rsi < params["rsi_oversold"] + 10:  # Increase threshold to generate more signals
-                    # Scale strength based on how oversold
-                    strength = 0.5 + ((params["rsi_oversold"] + 10 - latest_rsi) / 40)
+                # Oversold condition (potential buy) - Using standard RSI thresholds
+                if latest_rsi < params["rsi_oversold"]:
+                    # Scale strength based on how oversold (more oversold = stronger signal)
+                    strength = 0.5 + ((params["rsi_oversold"] - latest_rsi) / 30)
                     signals["rsi_oversold"] = {
                         "action": "buy",
                         "strength": min(0.9, strength),  # Cap at 0.9
                         "reason": f"RSI oversold ({latest_rsi:.2f})",
                         "strategy": "momentum"
                     }
-                # Overbought condition (potential sell) - Make more aggressive
-                elif latest_rsi > params["rsi_overbought"] - 10:  # Decrease threshold to generate more signals
-                    # Scale strength based on how overbought
-                    strength = 0.5 + ((latest_rsi - (params["rsi_overbought"] - 10)) / 40)
+                # Overbought condition (potential sell) - Using standard RSI thresholds
+                elif latest_rsi > params["rsi_overbought"]:
+                    # Scale strength based on how overbought (more overbought = stronger signal)
+                    strength = 0.5 + ((latest_rsi - params["rsi_overbought"]) / 30)
                     signals["rsi_overbought"] = {
                         "action": "sell",
                         "strength": min(0.9, strength),  # Cap at 0.9
@@ -317,32 +415,55 @@ class StocksAgent:
                 macd_line = ema_fast - ema_slow
                 signal_line = macd_line.ewm(span=params["macd_signal"], adjust=False).mean()
                 
-                # Get the latest values
-                latest_macd = macd_line.iloc[-1] if not macd_line.empty else None
-                latest_signal = signal_line.iloc[-1] if not signal_line.empty else None
+                # Get the latest values - handle both pandas Series and NumPy arrays
+                if isinstance(macd_line, pd.Series):
+                    latest_macd = safe_idx(macd_line, -1)
+                elif isinstance(macd_line, np.ndarray) and len(macd_line) > 0:
+                    latest_macd = macd_line[-1]
+                else:
+                    latest_macd = None
+                    
+                if isinstance(signal_line, pd.Series):
+                    latest_signal = safe_idx(signal_line, -1)
+                elif isinstance(signal_line, np.ndarray) and len(signal_line) > 0:
+                    latest_signal = signal_line[-1]
+                else:
+                    latest_signal = None
             
                 if latest_macd is not None and latest_signal is not None:
                     # MACD crosses above signal line (potential buy)
                     if len(macd_line) > 1 and len(signal_line) > 1:
-                        prev_macd = macd_line.iloc[-2]
-                        prev_signal = signal_line.iloc[-2]
+                        # Handle both pandas Series and NumPy arrays for previous values
+                        if isinstance(macd_line, pd.Series):
+                            prev_macd = safe_idx(macd_line, -2)
+                        elif isinstance(macd_line, np.ndarray):
+                            prev_macd = macd_line[-2]
+                        else:
+                            prev_macd = None
+                            
+                        if isinstance(signal_line, pd.Series):
+                            prev_signal = safe_idx(signal_line, -2)
+                        elif isinstance(signal_line, np.ndarray):
+                            prev_signal = signal_line[-2]
+                        else:
+                            prev_signal = None
                         
                         # Calculate distance between MACD and signal line
                         macd_distance = abs(latest_macd - latest_signal)
                         norm_distance = macd_distance / abs(latest_signal) if latest_signal != 0 else 0
                     
-                    # MACD crosses or is about to cross above signal line (potential buy)
-                    if (prev_macd < prev_signal and latest_macd > latest_signal) or \
-                       (latest_macd < latest_signal and (latest_signal - latest_macd) / abs(latest_signal) < 0.05):
+                    # MACD crosses above signal line (potential buy) - actual crossover only
+                    if prev_macd < prev_signal and latest_macd > latest_signal:
+                        # Strength based on the size of the crossover movement
                         signals["macd_cross_above"] = {
                             "action": "buy",
                             "strength": min(0.8, 0.6 + norm_distance),
                             "reason": "MACD crossed above signal line",
                             "strategy": "momentum"
                         }
-                    # MACD crosses or is about to cross below signal line (potential sell)
-                    elif (prev_macd > prev_signal and latest_macd < latest_signal) or \
-                         (latest_macd > latest_signal and (latest_macd - latest_signal) / abs(latest_signal) < 0.05):
+                    # MACD crosses below signal line (potential sell) - actual crossover only
+                    elif prev_macd > prev_signal and latest_macd < latest_signal:
+                        # Strength based on the size of the crossover movement
                         signals["macd_cross_below"] = {
                             "action": "sell",
                             "strength": min(0.8, 0.6 + norm_distance),
@@ -351,7 +472,7 @@ class StocksAgent:
                         }
                         
                     # MACD is positive and increasing (bullish momentum)
-                    if latest_macd > 0 and len(macd_line) > 5 and latest_macd > macd_line.iloc[-5]:
+                    if latest_macd > 0 and len(macd_line) > 5 and latest_macd > safe_idx(macd_line, -5):
                         signals["macd_bullish"] = {
                             "action": "buy",
                             "strength": 0.5,
@@ -360,7 +481,7 @@ class StocksAgent:
                         }
                         
                     # MACD is negative and decreasing (bearish momentum)
-                    elif latest_macd < 0 and len(macd_line) > 5 and latest_macd < macd_line.iloc[-5]:
+                    elif latest_macd < 0 and len(macd_line) > 5 and latest_macd < safe_idx(macd_line, -5):
                         signals["macd_bearish"] = {
                             "action": "sell",
                             "strength": 0.5,
@@ -400,18 +521,33 @@ class StocksAgent:
                 middle = middle.dropna()
                 lower = lower.dropna()
             
-            if not upper.empty and not lower.empty:
-                last_close = close.iloc[-1]
-                last_upper = upper.iloc[-1]
-                last_lower = lower.iloc[-1]
-                last_middle = middle.iloc[-1]
+            # Extract the latest values and handle both pandas Series and NumPy arrays
+            if isinstance(upper, pd.Series) and isinstance(lower, pd.Series):
+                if not upper.empty and not lower.empty:
+                    # Handle pandas Series
+                    # Use safe_idx for consistent data access
+                    last_upper = safe_idx(upper, -1)
+                    last_lower = safe_idx(lower, -1)
+                    last_middle = safe_idx(middle, -1)
+                    last_close = safe_idx(close, -1)
+                else:
+                    return signals  # Not enough data
+            elif isinstance(upper, np.ndarray) and isinstance(lower, np.ndarray) and len(upper) > 0 and len(lower) > 0:
+                # Handle NumPy arrays
+                last_upper = upper[-1]
+                last_lower = lower[-1]
+                last_middle = middle[-1] if isinstance(middle, np.ndarray) and len(middle) > 0 else None
+                last_close = close[-1] if isinstance(close, np.ndarray) and len(close) > 0 else None
+            else:
+                return signals  # Not the right data format
                 
                 # Price below lower band (potential buy)
                 if last_close < last_lower:
                     # Calculate how far below the band (normalized)
                     band_width = last_upper - last_lower
                     distance = (last_lower - last_close) / band_width if band_width > 0 else 0
-                    strength = min(0.9, 0.5 + distance)  # Cap at 0.9
+                    # Use a more conservative strength calculation - don't artificially boost
+                    strength = min(0.7, 0.4 + distance)  # Lower base and cap
                     
                     signals['bollinger_lower'] = {
                         'action': 'buy',
@@ -427,7 +563,8 @@ class StocksAgent:
                     # Calculate how far above the band (normalized)
                     band_width = last_upper - last_lower
                     distance = (last_close - last_upper) / band_width if band_width > 0 else 0
-                    strength = min(0.9, 0.5 + distance)  # Cap at 0.9
+                    # Use a more conservative strength calculation - don't artificially boost
+                    strength = min(0.7, 0.4 + distance)  # Lower base and cap
                     
                     signals['bollinger_upper'] = {
                         'action': 'sell',
@@ -444,6 +581,12 @@ class StocksAgent:
         # Note: 'data' is not defined in this function, so we'll check if we have high and low data
         if high is not None and low is not None:
             try:
+                # Convert to pandas Series if they're numpy arrays
+                if isinstance(high, np.ndarray):
+                    high = pd.Series(high, index=close.index)
+                if isinstance(low, np.ndarray):
+                    low = pd.Series(low, index=close.index)
+                    
                 # Simple implementation of VWAP calculation
                 if len(close) >= params["vwap_period"]:
                     # Calculate typical price (TP): (High + Low + Close) / 3
@@ -460,28 +603,41 @@ class StocksAgent:
                     vwap_values = tp_vol_sum / vol_sum
                     vwap_values = vwap_values.dropna()
                 
-                if not vwap_values.empty:
-                    last_vwap = vwap_values.iloc[-1]
-                    last_close = close.iloc[-1]
+                    # Handle both pandas Series and NumPy arrays
+                    if isinstance(vwap_values, pd.Series) and not vwap_values.empty:
+                        last_vwap = safe_idx(vwap_values, -1)
+                        last_close = safe_idx(close, -1)
+                        
+                        # Calculate percentage difference from VWAP
+                        if last_close is not None and last_vwap is not None:
+                            pct_diff = (last_close - last_vwap) / last_vwap * 100
                     
-                    # Price significantly below VWAP (potential buy)
-                    if last_close < last_vwap * 0.98:  # 2% below VWAP
+                    # Price significantly below VWAP (potential buy) - using standard 3% threshold
+                    if pct_diff < -3.0:  # 3% below VWAP
+                        # Calculate strength based on distance from VWAP (more distance = stronger signal)
+                        # but cap it to avoid overemphasizing extreme moves
+                        strength = min(0.7, 0.4 + abs(pct_diff) / 10)
                         signals['vwap_below'] = {
                             'action': 'buy',
-                            'strength': 0.6,
-                            'reason': f'Price below VWAP',
+                            'strength': strength,
+                            'reason': f'Price {abs(pct_diff):.2f}% below VWAP',
                             'close': last_close,
-                            'vwap': last_vwap
+                            'vwap': last_vwap,
+                            'pct_diff': pct_diff
                         }
                     
-                    # Price significantly above VWAP (potential sell)
-                    elif last_close > last_vwap * 1.02:  # 2% above VWAP
+                    # Price significantly above VWAP (potential sell) - using standard 3% threshold
+                    elif pct_diff > 3.0:  # 3% above VWAP
+                        # Calculate strength based on distance from VWAP (more distance = stronger signal)
+                        # but cap it to avoid overemphasizing extreme moves
+                        strength = min(0.7, 0.4 + abs(pct_diff) / 10)
                         signals['vwap_above'] = {
                             'action': 'sell',
-                            'strength': 0.6,
-                            'reason': f'Price above VWAP',
+                            'strength': strength,
+                            'reason': f'Price {pct_diff:.2f}% above VWAP',
                             'close': last_close,
-                            'vwap': last_vwap
+                            'vwap': last_vwap,
+                            'pct_diff': pct_diff
                         }
             except Exception as e:
                 self.logger.warning(f"VWAP calculation failed: {str(e)}")
@@ -515,29 +671,60 @@ class StocksAgent:
                     atr_values = tr.rolling(window=params["atr_period"]).mean()
                     atr_values = atr_values.dropna()
                 
-                if not atr_values.empty and len(close) > 1:
-                    last_atr = atr_values.iloc[-1]
-                    last_close = close.iloc[-1]
-                    prev_close = close.iloc[-2]
+                    # Handle both pandas Series and NumPy arrays
+                    if isinstance(atr_values, pd.Series) and not atr_values.empty and len(close) > 1:
+                        last_atr = safe_idx(atr_values, -1)
+                        # Use safe_idx for consistent data access regardless of type
+                        last_close = safe_idx(close, -1)
+                        prev_close = safe_idx(close, -2)
+                        
+                        if last_close is None or prev_close is None:
+                            return signals  # Not enough data
+                    elif isinstance(atr_values, np.ndarray) and len(atr_values) > 0 and len(close) > 1:
+                        # Convert numpy arrays to pandas Series for consistent handling
+                        atr_values_series = pd.Series(atr_values)
+                        close_series = pd.Series(close) if isinstance(close, np.ndarray) else close
+                        
+                        last_atr = safe_idx(atr_values_series, -1)
+                        last_close = safe_idx(close_series, -1)
+                        prev_close = safe_idx(close_series, -2)
+                        
+                        if last_close is None or prev_close is None:
+                            return signals  # Not enough data
+                    else:
+                        return signals  # Not enough data
                     
-                    # Significant price move up (> ATR * multiplier)
-                    if last_close > prev_close + (last_atr * params["atr_multiplier"]):
+                    # Calculate the price movement as a multiple of ATR
+                    price_move = last_close - prev_close
+                    move_in_atr = abs(price_move) / last_atr if last_atr > 0 else 0
+                    
+                    # Significant price move up (> ATR * multiplier) - true volatility breakout
+                    # Note: ATR multiplier is defined in the strategy parameters
+                    if price_move > 0 and move_in_atr > params["atr_multiplier"]:
+                        # Calculate strength based on how much it exceeded the multiplier
+                        # But use conservative approach to avoid artificially strong signals
+                        strength = min(0.7, 0.5 + (move_in_atr - params["atr_multiplier"]) / 10)
                         signals['atr_breakout_up'] = {
                             'action': 'buy',
-                            'strength': 0.7,
-                            'reason': f'Volatility breakout up (ATR)',
+                            'strength': strength,
+                            'reason': f'Volatility breakout up ({move_in_atr:.2f}x ATR)',
                             'atr': last_atr,
-                            'move_size': last_close - prev_close
+                            'move_size': price_move,
+                            'move_in_atr': move_in_atr
                         }
                     
-                    # Significant price move down (> ATR * multiplier)
-                    elif last_close < prev_close - (last_atr * params["atr_multiplier"]):
+                    # Significant price move down (> ATR * multiplier) - true volatility breakout
+                    elif price_move < 0 and move_in_atr > params["atr_multiplier"]:
+                        # Calculate strength based on how much it exceeded the multiplier
+                        # But use conservative approach to avoid artificially strong signals
+                        strength = min(0.7, 0.5 + (move_in_atr - params["atr_multiplier"]) / 10)
                         signals['atr_breakout_down'] = {
                             'action': 'sell',
-                            'strength': 0.7,
-                            'reason': f'Volatility breakout down (ATR)',
+                            'strength': strength,
+                            'reason': f'Volatility breakout down ({move_in_atr:.2f}x ATR)',
                             'atr': last_atr,
-                            'move_size': prev_close - last_close
+                            'move_size': abs(price_move),
+                            'move_in_atr': move_in_atr
                         }
             except Exception as e:
                 self.logger.warning(f"ATR calculation failed: {str(e)}")
@@ -554,11 +741,26 @@ class StocksAgent:
                     ma_values = close.rolling(window=period).mean()
                     ma_values = ma_values.dropna()
                 
-                if not ma_values.empty and len(close) > 1 and len(ma_values) > 1:
-                    last_ma = ma_values.iloc[-1]
-                    prev_ma = ma_values.iloc[-2]
-                    last_close = close.iloc[-1]
-                    prev_close = close.iloc[-2]
+                    # Safely handle both pandas Series and NumPy arrays
+                    if isinstance(ma_values, pd.Series) and not ma_values.empty and len(close) > 1 and len(ma_values) > 1:
+                        # Pandas Series handling
+                        last_ma = safe_idx(ma_values, -1)
+                        prev_ma = safe_idx(ma_values, -2)
+                        
+                        last_close = safe_idx(close, -1)
+                        prev_close = safe_idx(close, -2)
+                    elif isinstance(ma_values, np.ndarray) and len(ma_values) > 1 and len(close) > 1:
+                        # Convert to pandas Series for consistent handling
+                        ma_values_series = pd.Series(ma_values)
+                        close_series = pd.Series(close) if isinstance(close, np.ndarray) else close
+                        
+                        last_ma = safe_idx(ma_values_series, -1)
+                        prev_ma = safe_idx(ma_values_series, -2)
+                        
+                        last_close = safe_idx(close_series, -1)
+                        prev_close = safe_idx(close_series, -2)
+                    if last_close is None or prev_close is None or last_ma is None or prev_ma is None:
+                        continue
                     
                     # Price crosses above MA (bullish)
                     if prev_close < prev_ma and last_close > last_ma:
@@ -579,6 +781,9 @@ class StocksAgent:
                             'ma': last_ma,
                             'close': last_close
                         }
+                else:
+                    # Skip this MA period if not enough data
+                    continue
         except Exception as e:
             self.logger.warning(f"Moving Average calculation failed: {str(e)}")
         
@@ -740,7 +945,7 @@ class StocksAgent:
             
             # Get the current price as a scalar value to avoid numpy array comparison issues
             try:
-                current_price = float(close.iloc[-1]) if len(close) > 0 else 0.0
+                current_price = float(safe_idx(close, -1) or 0.0)
                 if current_price <= 0:
                     return {'action': 'hold', 'reason': 'Invalid price data (zero or negative)'}
             except (ValueError, TypeError, IndexError) as e:
@@ -763,14 +968,14 @@ class StocksAgent:
                     has_valid_mas = (not short_ma.empty and 
                                     not med_ma.empty and 
                                     not long_ma.empty and 
-                                    not pd.isna(short_ma.iloc[-1]) and 
-                                    not pd.isna(med_ma.iloc[-1]) and 
-                                    not pd.isna(long_ma.iloc[-1]))
+                                    not pd.isna(safe_idx(short_ma, -1)) and 
+                                    not pd.isna(safe_idx(med_ma, -1)) and 
+                                    not pd.isna(safe_idx(long_ma, -1)))
                     
                     if has_valid_mas:
-                        latest_short = float(short_ma.iloc[-1])
-                        latest_med = float(med_ma.iloc[-1])
-                        latest_long = float(long_ma.iloc[-1])
+                        latest_short = float(safe_idx(short_ma, -1) or 0)
+                        latest_med = float(safe_idx(med_ma, -1) or 0)
+                        latest_long = float(safe_idx(long_ma, -1) or 0)
                 except Exception as e:
                     self.logger.error(f"Error calculating moving averages: {e}")
                     return {'action': 'hold', 'reason': f'Error in MA calculation: {e}'}
@@ -804,8 +1009,8 @@ class StocksAgent:
                 try:
                     # Get scalar price values to avoid ambiguous truth value errors
                     try:
-                        price_5d_ago = float(close.iloc[-5]) 
-                        current_price_value = float(close.iloc[-1])
+                        price_5d_ago = float(safe_idx(close, -5) or 0) 
+                        current_price_value = float(safe_idx(close, -1) or 0)
                     except (ValueError, TypeError, IndexError) as e:
                         self.logger.warning(f"Error extracting price values: {e}")
                         # Skip momentum calculation if price extraction fails
@@ -850,8 +1055,10 @@ class StocksAgent:
             if len(close) >= 3:
                 try:
                     # Check for short-term price patterns safely
-                    if close.iloc[-2] > 0:  # Avoid division by zero
-                        two_day_change = (close.iloc[-1] / close.iloc[-2] - 1) * 100
+                    prev_price = safe_idx(close, -2)
+                    current_price = safe_idx(close, -1)
+                    if prev_price and prev_price > 0:  # Avoid division by zero
+                        two_day_change = (current_price / prev_price - 1) * 100
                         
                         # Generate basic mean reversion signals - buy dips, sell peaks
                         if two_day_change < -0.5:  # 0.5% dip in a day - buy opportunity
@@ -878,7 +1085,9 @@ class StocksAgent:
             # Ensure we have at least one signal if there's enough data
             if not signals and len(close) > 20:
                 # Generate a simple buy signal based on recent price performance
-                if close.iloc[-1] > close.iloc[-20]:  # Price is higher than 20 days ago
+                current_price = safe_idx(close, -1)
+                price_20d_ago = safe_idx(close, -20)
+                if current_price and price_20d_ago and current_price > price_20d_ago:  # Price is higher than 20 days ago
                     signals["trend_following"] = {
                         'action': 'buy',
                         'symbol': symbol,

@@ -59,7 +59,7 @@ class MarketDatabase:
                 return None
     
     def _create_tables(self):
-        """Create necessary tables if they don't exist"""
+        """Create necessary tables if they don't exist and handle schema migrations"""
         try:
             conn = self._get_connection()
             if conn is None:
@@ -68,114 +68,234 @@ class MarketDatabase:
                 
             cursor = conn.cursor()
             
-            # Create data_sync_log table to track synchronization activities
+            # Check database version - create version table if it doesn't exist
             cursor.execute("""
-            CREATE TABLE IF NOT EXISTS data_sync_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source TEXT NOT NULL,
-                data_type TEXT NOT NULL,
-                start_date TEXT,
-                end_date TEXT,
-                symbols TEXT,
-                status TEXT NOT NULL,
-                records_processed INTEGER,
-                error_message TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            CREATE TABLE IF NOT EXISTS db_version (
+                id INTEGER PRIMARY KEY,
+                version INTEGER NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """)
             
-            # Stock prices table
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS stock_prices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                date TEXT NOT NULL,
-                open REAL,
-                high REAL,
-                low REAL,
-                close REAL,
-                volume INTEGER,
-                vwap REAL,
-                timestamp INTEGER,
-                UNIQUE(symbol, date)
-            )
-            ''')
+            # Get current version
+            cursor.execute("SELECT version FROM db_version ORDER BY version DESC LIMIT 1")
+            result = cursor.fetchone()
+            current_version = result[0] if result else 0
             
-            # Stock fundamentals table
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS stock_fundamentals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                date TEXT NOT NULL,
-                market_cap REAL,
-                pe_ratio REAL,
-                dividend_yield REAL,
-                eps REAL,
-                beta REAL,
-                full_data TEXT,
-                UNIQUE(symbol, date)
-            )
-            ''')
-            
-            # Options data table
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS options_data (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                expiration_date TEXT NOT NULL,
-                strike_price REAL NOT NULL,
-                option_type TEXT NOT NULL,
-                date TEXT NOT NULL,
-                open REAL,
-                high REAL,
-                low REAL,
-                close REAL,
-                volume INTEGER,
-                open_interest INTEGER,
-                implied_volatility REAL,
-                delta REAL,
-                gamma REAL,
-                theta REAL,
-                vega REAL,
-                UNIQUE(symbol, expiration_date, strike_price, option_type, date)
-            )
-            ''')
-            
-            # Crypto prices table
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS crypto_prices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                date TEXT NOT NULL,
-                open REAL,
-                high REAL,
-                low REAL,
-                close REAL,
-                volume REAL,
-                market_cap REAL,
-                UNIQUE(symbol, date)
-            )
-            ''')
-            
-            # Data source tracking table
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS data_sources (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                data_type TEXT NOT NULL,
-                source TEXT NOT NULL,
-                start_date TEXT,
-                end_date TEXT,
-                last_updated TEXT,
-                UNIQUE(symbol, data_type, source)
-            )
-            ''')
+            # Migrations - run if needed
+            if current_version < 1:
+                logger.info("Running database migration to version 1")
+                self._migration_v1(cursor)
+                
+                # Update version
+                cursor.execute("INSERT INTO db_version (version) VALUES (1)")
+                conn.commit()
+                
+            # Create standard tables (regardless of version)
+            self._create_standard_tables(cursor)
             
             conn.commit()
-            logger.info("Database tables created successfully")
         except Exception as e:
             logger.error(f"Error creating database tables: {str(e)}")
-    
+            # Try to recover if possible
+            try:
+                if conn:
+                    conn.rollback()
+            except Exception as rollback_error:
+                logger.error(f"Error rolling back transaction: {str(rollback_error)}")
+                
+    def _create_standard_tables(self, cursor):
+        """Create the standard tables required by the application"""
+        # Create data_sync_log table to track synchronization activities
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS data_sync_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            data_type TEXT NOT NULL,
+            start_date TEXT,
+            end_date TEXT,
+            symbols TEXT,
+            status TEXT NOT NULL,
+            records_processed INTEGER,
+            error_message TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+        
+        # Stock prices table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS stock_prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume INTEGER,
+            vwap REAL,
+            timestamp INTEGER,
+            source TEXT,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP,
+            UNIQUE(symbol, date)
+        )
+        ''')
+        
+        # Stock fundamentals table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS stock_fundamentals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            date TEXT NOT NULL,
+            market_cap REAL,
+            pe_ratio REAL,
+            dividend_yield REAL,
+            eps REAL,
+            beta REAL,
+            full_data TEXT,
+            UNIQUE(symbol, date)
+        )
+        ''')
+        
+        # Options data table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS options_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            expiration_date TEXT NOT NULL,
+            strike_price REAL NOT NULL,
+            option_type TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume INTEGER,
+            open_interest INTEGER,
+            implied_volatility REAL,
+            delta REAL,
+            gamma REAL,
+            theta REAL,
+            vega REAL,
+            UNIQUE(symbol, expiration_date, strike_price, option_type, date)
+        )
+        ''')
+        
+        # Crypto prices table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS crypto_prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume INTEGER,
+            market_cap REAL,
+            UNIQUE(symbol, date)
+        )
+        ''')
+        
+        # Data sources tracking table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS data_sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            data_type TEXT NOT NULL,
+            source TEXT NOT NULL,
+            last_updated TIMESTAMP,
+            status TEXT,
+            UNIQUE(symbol, data_type, source)
+        )
+        ''')
+            
+    def _migration_v1(self, cursor):
+        """Apply database schema version 1 migrations"""
+        try:
+            # Recreate approach is safer for SQLite migrations
+            # Check if stock_prices table exists and drop it to force recreation
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='stock_prices'")
+            if cursor.fetchone():
+                logger.info("Recreating stock_prices table with updated schema")
+                # Backup existing data
+                try:
+                    cursor.execute("ALTER TABLE stock_prices RENAME TO stock_prices_backup")
+                    logger.info("Backed up existing stock prices table")
+                    
+                    # Create new table with correct schema
+                    cursor.execute('''
+                    CREATE TABLE stock_prices (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        symbol TEXT NOT NULL,
+                        date TEXT NOT NULL,
+                        open REAL,
+                        high REAL,
+                        low REAL,
+                        close REAL,
+                        volume INTEGER,
+                        vwap REAL,
+                        timestamp INTEGER,
+                        source TEXT,
+                        created_at TIMESTAMP,
+                        updated_at TIMESTAMP,
+                        UNIQUE(symbol, date)
+                    )
+                    ''')
+                    
+                    # Copy data from backup table (only columns that exist in both)
+                    cursor.execute("PRAGMA table_info(stock_prices_backup)")
+                    columns = [row[1] for row in cursor.fetchall()]
+                    
+                    # Build a column list of common columns between old and new table
+                    common_columns = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
+                    # Add any other columns that might exist in the backup
+                    for col in ['vwap', 'timestamp', 'source']:
+                        if col in columns:
+                            common_columns.append(col)
+                    
+                    column_str = ', '.join(common_columns)
+                    cursor.execute(f"INSERT INTO stock_prices ({column_str}) SELECT {column_str} FROM stock_prices_backup")
+                    logger.info("Migrated data from backup table to new schema")
+                    
+                    # Drop backup table
+                    # cursor.execute("DROP TABLE stock_prices_backup") 
+                    # Keep backup for safety
+                    
+                except Exception as e:
+                    logger.error(f"Error migrating stock_prices table: {str(e)}")
+                    # If something goes wrong, recreate the table from scratch
+                    cursor.execute("DROP TABLE IF EXISTS stock_prices")
+                    cursor.execute('''
+                    CREATE TABLE stock_prices (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        symbol TEXT NOT NULL,
+                        date TEXT NOT NULL,
+                        open REAL,
+                        high REAL,
+                        low REAL,
+                        close REAL,
+                        volume INTEGER,
+                        vwap REAL,
+                        timestamp INTEGER,
+                        source TEXT,
+                        created_at TIMESTAMP,
+                        updated_at TIMESTAMP,
+                        UNIQUE(symbol, date)
+                    )
+                    ''')
+                    logger.info("Created fresh stock_prices table")
+                    
+            # Apply similar migration approach to other tables if needed
+            
+            # Continue with creating tables - existing tables won't be affected by CREATE IF NOT EXISTS
+            logger.info("Creating tables for schema v1")
+        except Exception as e:
+            logger.error(f"Error during schema migration v1: {str(e)}")
+            # Re-raise to let the calling method handle it
+            raise
+            
     def store_stock_prices(self, df, symbol, source='unknown'):
         """Store stock price data in the database
         
@@ -196,6 +316,81 @@ class MarketDatabase:
             cursor = conn.cursor()
             records_stored = 0
             
+            # Verify the stock_prices table exists and has the necessary structure
+            try:
+                # Check if table exists
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='stock_prices'")
+                if not cursor.fetchone():
+                    # Table doesn't exist, create it
+                    logger.info("Creating stock_prices table which is missing")
+                    cursor.execute('''
+                    CREATE TABLE stock_prices (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        symbol TEXT NOT NULL,
+                        date TEXT NOT NULL,
+                        open REAL,
+                        high REAL,
+                        low REAL,
+                        close REAL,
+                        volume INTEGER,
+                        vwap REAL,
+                        timestamp INTEGER,
+                        source TEXT,
+                        created_at TIMESTAMP,
+                        updated_at TIMESTAMP,
+                        UNIQUE(symbol, date)
+                    )
+                    ''')
+                    conn.commit()
+                else:
+                    # Check if id column exists
+                    cursor.execute("PRAGMA table_info(stock_prices)")
+                    columns = [row[1] for row in cursor.fetchall()]
+                    if 'id' not in columns:
+                        # The id column is missing - recreate table with correct schema
+                        logger.warning("The id column is missing from stock_prices table. Recreating table.")
+                        cursor.execute("ALTER TABLE stock_prices RENAME TO stock_prices_old")
+                        
+                        # Create the proper table
+                        cursor.execute('''
+                        CREATE TABLE stock_prices (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            symbol TEXT NOT NULL,
+                            date TEXT NOT NULL,
+                            open REAL,
+                            high REAL,
+                            low REAL,
+                            close REAL,
+                            volume INTEGER,
+                            vwap REAL,
+                            timestamp INTEGER,
+                            source TEXT,
+                            created_at TIMESTAMP,
+                            updated_at TIMESTAMP,
+                            UNIQUE(symbol, date)
+                        )
+                        ''')
+                        
+                        # Try to migrate data if possible
+                        try:
+                            cursor.execute("PRAGMA table_info(stock_prices_old)")
+                            old_columns = [row[1] for row in cursor.fetchall()]
+                            common_cols = [col for col in old_columns if col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'vwap', 'timestamp', 'source']]
+                            
+                            if common_cols:
+                                col_str = ', '.join(common_cols)
+                                cursor.execute(f"INSERT INTO stock_prices ({col_str}) SELECT {col_str} FROM stock_prices_old")
+                                logger.info("Migrated data from old table structure")
+                        except Exception as e:
+                            logger.warning(f"Could not migrate data: {str(e)}")
+                            
+                        # Drop old table
+                        cursor.execute("DROP TABLE stock_prices_old")
+                        conn.commit()
+            except Exception as e:
+                logger.error(f"Error checking/creating table: {str(e)}")
+                raise
+            
             # Process each row in the DataFrame
             for date, row in df.iterrows():
                 # Convert date to string if it's a datetime
@@ -204,33 +399,29 @@ class MarketDatabase:
                 else:
                     date_str = str(date)
                 
-                # Check if record already exists
-                cursor.execute(
-                    "SELECT id FROM stock_prices WHERE symbol = ? AND date = ?", 
-                    (symbol, date_str)
-                )
-                existing = cursor.fetchone()
-                
-                if existing:
-                    # Update existing record
+                try:
+                    # First try to insert directly - faster if the record doesn't exist
                     cursor.execute(
-                        """UPDATE stock_prices 
-                        SET open = ?, high = ?, low = ?, close = ?, volume = ?, source = ?, updated_at = CURRENT_TIMESTAMP 
-                        WHERE symbol = ? AND date = ?""",
-                        (float(row['open']), float(row['high']), float(row['low']), float(row['close']), 
-                         int(row['volume']), source, symbol, date_str)
-                    )
-                else:
-                    # Insert new record
-                    cursor.execute(
-                        """INSERT INTO stock_prices 
+                        """INSERT OR IGNORE INTO stock_prices 
                         (symbol, date, open, high, low, close, volume, source, created_at, updated_at) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
                         (symbol, date_str, float(row['open']), float(row['high']), float(row['low']), 
                          float(row['close']), int(row['volume']), source)
                     )
-                
-                records_stored += 1
+                    
+                    # If insert didn't work, then update instead
+                    if cursor.rowcount == 0:
+                        cursor.execute(
+                            """UPDATE stock_prices 
+                            SET open = ?, high = ?, low = ?, close = ?, volume = ?, source = ?, updated_at = CURRENT_TIMESTAMP 
+                            WHERE symbol = ? AND date = ?""",
+                            (float(row['open']), float(row['high']), float(row['low']), float(row['close']), 
+                             int(row['volume']), source, symbol, date_str)
+                        )
+                    
+                    records_stored += 1
+                except Exception as e:
+                    logger.warning(f"Error storing price record for {symbol} on {date_str}: {str(e)}")
             
             conn.commit()
             logger.info(f"Stored {records_stored} price records for {symbol} from {source}")

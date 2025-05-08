@@ -1,11 +1,12 @@
 import gradio as gr
 import pandas as pd
-import numpy as np
+import numpy as np  # Make sure numpy is imported correctly
 import logging
 import sys
 import os
 import yfinance as yf
 import time
+from datetime import datetime, timedelta
 
 # Add parent directory to path to import from data module
 sys.path.append('/app')
@@ -358,7 +359,6 @@ def run_stock_screener(universe, min_price, max_price, min_volume, min_volatilit
                     elif symbol == 'GOOGL': base_price = 140.0
                     
                     # Add some randomness
-                    import numpy as np
                     np.random.seed(hash(symbol) % 10000)
                     price_variation = 0.95 + 0.1 * np.random.random()
                     current_price = base_price * price_variation

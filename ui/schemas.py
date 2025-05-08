@@ -207,13 +207,17 @@ def run_backtest(request: BacktestRequest):
             # Initialize StocksAgent with appropriate mode based on strategy
             agent = StocksAgent()
             
-            # Only enable debug mode if explicitly requested or if no strategy is specified
-            if request.strategy_name and 'debug' not in request.strategy_name.lower():
-                agent.debug_enabled = False
-                logging.info(f"Using normal strategy mode for {request.strategy_name}")
-            else:
+            # Only enable debug mode if explicitly requested
+            if request.strategy_name and 'debug' in request.strategy_name.lower():
                 agent.debug_enabled = True
                 logging.info(f"Using debug mode for backtesting (forced trade generation)")
+            else:
+                agent.debug_enabled = False
+                logging.info(f"Using normal strategy mode for {request.strategy_name or 'default strategies'}")
+                
+            # Make sure we have a valid strategy name
+            if not request.strategy_name:
+                request.strategy_name = "combined_strategy"  # Default to combined strategy if none specified
             
             # Just for logging purposes, note the requested agent type
             if request.agent_type not in ["stocks_agent", "value_agent"]:
