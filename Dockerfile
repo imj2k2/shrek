@@ -37,5 +37,10 @@ RUN mkdir -p /app/data /app/backtest_results /app/data/db
 # Expose ports for FastAPI and Gradio
 EXPOSE 8000 7860
 
+# Set entrypoint script to run migrations before starting the app
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
 # Default command
 CMD ["uvicorn", "ui.app:app", "--host", "0.0.0.0", "--port", "8000"]

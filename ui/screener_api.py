@@ -39,6 +39,7 @@ class ScreenerRequest(BaseModel):
     sort_by: Optional[str] = "Volume"
     sort_ascending: Optional[bool] = False
     max_results: Optional[int] = 50
+    position_type: Optional[str] = "long"  # Added position_type field
 
 @router.post("/screener/run")
 def run_screener(request: ScreenerRequest):
@@ -75,15 +76,20 @@ def run_screener(request: ScreenerRequest):
             roe_min=request.roe_min,
             sort_by=request.sort_by,
             sort_ascending=request.sort_ascending,
-            max_results=request.max_results
+            max_results=request.max_results,
+            position_type=request.position_type
         )
         
         # Convert results to a list of dictionaries for API response
         if isinstance(results, list):
-            return {"results": results, "count": len(results)}
+            # Add position type to each result
+            for result in results:
+                result['position_type'] = request.position_type
+            return {"results": results, "count": len(results), "position_type": request.position_type}
         else:
-            # If results is a DataFrame, convert to records
-            return {"results": results.to_dict(orient="records"), "count": len(results)}
+            # If results is a DataFrame, add position type column
+            results['position_type'] = request.position_type
+            return {"results": results.to_dict(orient="records"), "count": len(results), "position_type": request.position_type}
             
     except Exception as e:
         logger.error(f"Error running screener: {str(e)}")

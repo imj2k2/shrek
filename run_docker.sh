@@ -20,6 +20,19 @@ export DISCORD_TOKEN=${DISCORD_TOKEN:-"demo"}
 export BROKER_TYPE=${BROKER_TYPE:-"mock"}
 export DEBUG_TRADING=${DEBUG_TRADING:-"true"}
 
+# TimescaleDB settings
+export TIMESCALE_USER=${TIMESCALE_USER:-"postgres"}
+export TIMESCALE_PASSWORD=${TIMESCALE_PASSWORD:-"postgres"}
+export TIMESCALE_HOST=${TIMESCALE_HOST:-"timescaledb"}
+export TIMESCALE_PORT=${TIMESCALE_PORT:-5432}
+export TIMESCALE_DB=${TIMESCALE_DB:-"shrek"}
+
+# OpenTelemetry settings
+export OTEL_ENABLED=${OTEL_ENABLED:-"false"}
+export OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-"shrek-backend"}
+export OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-"http://otel-collector:4317"}
+export ENVIRONMENT=${ENVIRONMENT:-"development"}
+
 # Display banner
 echo "====================================================="
 echo "  AI-driven Multi-Agent Trading Platform"
@@ -37,6 +50,8 @@ COMMAND="up -d"
 SERVICES=""
 PROFILES=""
 USE_DISCORD=false
+USE_REACT_UI=true
+USE_MONITORING=true
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -74,6 +89,14 @@ while [[ $# -gt 0 ]]; do
       PROFILES="--profile backtest"
       shift
       ;;
+    --no-react)
+      USE_REACT_UI=false
+      shift
+      ;;
+    --no-monitoring)
+      USE_MONITORING=false
+      shift
+      ;;
     --help)
       echo "Usage: ./run_docker.sh [options]"
       echo ""
@@ -84,6 +107,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --logs       Show logs for all services"
       echo "  --discord    Enable Discord bot (requires DISCORD_TOKEN)"
       echo "  --backtest   Run the backtesting service"
+      echo "  --no-react   Disable React UI (use Gradio only)"
+      echo "  --no-monitoring Disable monitoring components (TimescaleDB and OpenTelemetry)"
       echo "  --help       Show this help message"
       echo ""
       echo "Environment variables:"
@@ -113,6 +138,17 @@ if [ "$USE_DISCORD" = true ]; then
   echo "Discord bot enabled."
 fi
 
+# Configure services based on options
+if [ "$USE_REACT_UI" = false ]; then
+  export COMPOSE_PROFILES="$COMPOSE_PROFILES,no-react"
+  echo "React UI disabled. Using Gradio UI only."
+fi
+
+if [ "$USE_MONITORING" = false ]; then
+  export COMPOSE_PROFILES="$COMPOSE_PROFILES,no-monitoring"
+  echo "Monitoring components disabled."
+fi
+
 # Run Docker Compose with the specified command
 if [ "$COMMAND" = "up -d" ] || [ "$COMMAND" = "up -d --build" ]; then
   if [ -z "$SERVICES" ]; then
@@ -131,8 +167,15 @@ if [ "$COMMAND" = "up -d" ] || [ "$COMMAND" = "up -d --build" ]; then
     # Show access URLs
     echo "====================================================="
     echo "Access the services at:"
-    echo "  - Backend API: http://localhost:8000"
-    echo "  - Gradio UI:   http://localhost:7860"
+    echo "  - Backend API:   http://localhost:8080"
+    echo "  - Gradio UI:     http://localhost:7860"
+    if [ "$USE_REACT_UI" = true ]; then
+      echo "  - Modern React UI: http://localhost:3000"
+    fi
+    if [ "$USE_MONITORING" = true ]; then
+      echo "  - TimescaleDB:   localhost:5432"
+      echo "  - Metrics:        http://localhost:8888"
+    fi
     echo "====================================================="
     
     # Check if services are healthy
@@ -143,6 +186,16 @@ if [ "$COMMAND" = "up -d" ] || [ "$COMMAND" = "up -d --build" ]; then
     
     echo "Backend status: $backend_status"
     echo "Gradio UI status: $gradio_status"
+    
+    if [ "$USE_REACT_UI" = true ]; then
+      react_status=$(docker inspect --format='{{.State.Health.Status}}' $(docker-compose ps -q react-ui) 2>/dev/null || echo "container not found")
+      echo "React UI status: $react_status"
+    fi
+    
+    if [ "$USE_MONITORING" = true ]; then
+      timescale_status=$(docker inspect --format='{{.State.Health.Status}}' $(docker-compose ps -q timescaledb) 2>/dev/null || echo "container not found")
+      echo "TimescaleDB status: $timescale_status"
+    fi
     
     if [ "$backend_status" != "healthy" ] || [ "$gradio_status" != "healthy" ]; then
       echo "\nSome services may not be fully healthy yet. Check logs with './run_docker.sh --logs'"

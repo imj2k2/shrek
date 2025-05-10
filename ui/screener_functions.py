@@ -23,8 +23,9 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global variable to store screened symbols
+# Global variable to store screened symbols and their position types
 screened_symbols_for_backtest = ""
+screened_positions_for_backtest = {}
 
 # S&P 500 symbols (subset)
 SP500_SYMBOLS = [
@@ -41,7 +42,7 @@ def run_stock_screener(universe, min_price, max_price, min_volume, min_volatilit
                      pe_min=0, pe_max=100, eps_min=0, eps_growth_min=0,
                      dividend_yield_min=0, market_cap_min=0, market_cap_max=0,
                      debt_to_equity_max=3, profit_margin_min=0, roe_min=0,
-                     sort_by="Volume", sort_ascending=False, max_results=50):
+                     sort_by="Volume", sort_ascending=False, max_results=50, position_type="long"):
     """Run stock screener using real data from database or Yahoo Finance"""
     try:
         # Determine which symbols to screen
@@ -402,7 +403,8 @@ def run_stock_screener(universe, min_price, max_price, min_volume, min_volatilit
                         'Dividend Yield': dividend_yield,
                         'Price/SMA50': 1.05 if price_above_sma50 else 0.95,
                         'Price/SMA200': 1.1 if price_above_sma200 else 0.9,
-                        'MACD': 1.0 if macd_positive else -1.0
+                        'MACD': 1.0 if macd_positive else -1.0,
+                        'Position Type': "Long" if not allow_short else "Short"
                     })
                 except Exception as e:
                     logger.warning(f"Error generating sample data for {symbol}: {str(e)}")
@@ -420,61 +422,109 @@ def run_stock_screener(universe, min_price, max_price, min_volume, min_volatilit
 def add_stocks_to_backtest(results, allow_short):
     """Add selected stocks to backtest"""
     try:
-        logger.info(f"Screener found {len(results)} matches")
+        global screened_symbols_for_backtest, screened_positions_for_backtest
         
-        # Return empty dataframe if no results
-        if not results:
-            # Ensure we return an empty dataframe with correct columns for display
-            return pd.DataFrame(columns=['Symbol', 'Price', 'Change %', 'Volume', 'Market Cap', 'P/E', 'EPS', 'Dividend %', '52W High', '52W Low', 'RSI', 'Position'])
-        
-        # Convert to DataFrame if it's not already
-        if isinstance(results, list):
-            df = pd.DataFrame(results)
+        # Check if results is a DataFrame
+        if isinstance(results, pd.DataFrame):
+            # Get symbols and position types from DataFrame
+            selected_symbols = results.index.tolist()
+            position_types = results.get('position_type', 'long')
+            
+            # Create position type mapping
+            screened_positions_for_backtest = {}
+            for i, symbol in enumerate(selected_symbols):
+                pos_type = position_types.iloc[i] if isinstance(position_types, pd.Series) else 'long'
+                screened_positions_for_backtest[symbol] = pos_type
+            
+            # Format symbols with position types for the backtest
+            formatted_symbols = []
+            for symbol in selected_symbols:
+                if screened_positions_for_backtest.get(symbol) == 'short' and allow_short:
+                    formatted_symbols.append(f"{symbol}:short")
+                else:
+                    formatted_symbols.append(symbol)
+            
+            # Create a comma-separated list of symbols
+            screened_symbols_for_backtest = ','.join(formatted_symbols)
+            
+            return f"Added {len(selected_symbols)} stocks to backtest: {screened_symbols_for_backtest}"
+            
+        elif isinstance(results, list):
+            # Get symbols and position types from list of dictionaries
+            selected_symbols = []
+            screened_positions_for_backtest = {}
+            
+            for item in results:
+                symbol = item.get('symbol')
+                if symbol:
+                    position_type = item.get('position_type', 'long')
+                    selected_symbols.append(symbol)
+                    screened_positions_for_backtest[symbol] = position_type
+            
+            # Format symbols with position types for the backtest
+            formatted_symbols = []
+            for symbol in selected_symbols:
+                if screened_positions_for_backtest.get(symbol) == 'short' and allow_short:
+                    formatted_symbols.append(f"{symbol}:short")
+                else:
+                    formatted_symbols.append(symbol)
+            
+            # Create a comma-separated list of symbols
+            screened_symbols_for_backtest = ','.join(formatted_symbols)
+            
+            return f"Added {len(selected_symbols)} stocks to backtest: {screened_symbols_for_backtest}"
+            
         else:
-            df = results
-        
-        # Add position type column
-        df["Position Type"] = "Long" if not allow_short else "Short"
-        
-        return df
+            return "Error: Invalid results format"
+            
     except Exception as e:
-        logger.error(f"Error adding stocks to backtest: {e}")
-        return pd.DataFrame()
+        return f"Error adding stocks to backtest: {str(e)}"
 
 def prepare_for_backtest(selected_stocks_df):
     """Prepare selected stocks for backtest"""
     try:
-        if selected_stocks_df.empty:
-            return ""
+        global screened_symbols_for_backtest, screened_positions_for_backtest
         
-        # Extract symbols and position types
-        symbols = []
-        for _, row in selected_stocks_df.iterrows():
-            symbol = row["Symbol"]
-            position_type = row["Position Type"]
-            # Add position type indicator to symbol
-            if position_type == "Short":
-                symbol = f"{symbol}:short"
-            symbols.append(symbol)
+        # Get symbols from DataFrame
+        selected_symbols = selected_stocks_df.index.tolist()
         
-        # Join with commas
-        return ",".join(symbols)
+        # Get position types if available
+        position_types = selected_stocks_df.get('position_type', pd.Series(['long'] * len(selected_symbols)))
+        
+        # Create position type mapping
+        screened_positions_for_backtest = {}
+        for i, symbol in enumerate(selected_symbols):
+            pos_type = position_types.iloc[i] if isinstance(position_types, pd.Series) else 'long'
+            screened_positions_for_backtest[symbol] = pos_type
+        
+        # Format symbols with position types for the backtest
+        formatted_symbols = []
+        for symbol in selected_symbols:
+            if screened_positions_for_backtest.get(symbol) == 'short':
+                formatted_symbols.append(f"{symbol}:short")
+            else:
+                formatted_symbols.append(symbol)
+        
+        # Create a comma-separated list of symbols
+        screened_symbols_for_backtest = ','.join(formatted_symbols)
+        
+        return f"Prepared {len(selected_symbols)} stocks for backtesting with position types"
+        
     except Exception as e:
-        logger.error(f"Error preparing stocks for backtest: {str(e)}")
-        return ""
+        return f"Error preparing stocks for backtest: {str(e)}"
 
 def transfer_to_backtest_tab(selected_stocks_df):
     """Transfer selected stocks to backtest tab"""
-    symbols_str = prepare_for_backtest(selected_stocks_df)
-    if not symbols_str:
-        return gr.update(value="No stocks selected")
+    try:
+        # Call prepare_for_backtest to update global variables with position types
+        message = prepare_for_backtest(selected_stocks_df)
         
-    # Store the symbols string for later use
-    global screened_symbols_for_backtest
-    screened_symbols_for_backtest = symbols_str
-    
-    # Return a success message
-    return gr.update(value=f"Transferred {len(symbols_str.split(','))} stocks to backtest tab. Switch to Backtest tab to use them.")
+        # In a real application, this would update the backtest tab UI
+        # For now, just return success message with position information
+        return "Stocks transferred to backtest tab with position types (long/short). Please switch to the backtest tab to continue."
+        
+    except Exception as e:
+        return f"Error transferring to backtest tab: {str(e)}"
 
 def load_screened_symbols():
     """Load screened symbols into the backtest tab"""

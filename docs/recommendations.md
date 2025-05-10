@@ -41,10 +41,11 @@ for message in consumer:
 **Current State**: Using SQLite with thread-local connections.
 
 **Recommendation**: Upgrade to a more robust database solution:
-- For production: Migrate to PostgreSQL or TimescaleDB (time-series optimized)
-- Implement proper database migrations with Alembic
-- Create read replicas for analytics workloads
-- Implement a caching layer with Redis for frequently accessed data
+- create a deployment option for production 
+    - Migrate TimescaleDB (time-series optimized)
+    - Implement proper database migrations with Alembic
+    - Create read replicas for analytics workloads
+    - Implement a caching layer with Redis for frequently accessed data
 
 ## Code Improvements
 

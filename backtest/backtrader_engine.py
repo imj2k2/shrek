@@ -415,6 +415,9 @@ class BacktraderEngine:
                 self.position_types[symbol] = position_type
                 self.logger.info(f"Setting position type for {symbol} to {position_type}")
                 
+                # Make the position type available to strategies
+                data.position_type = position_type
+                
                 # Add data to cerebro
                 self.cerebro.adddata(data)
                 

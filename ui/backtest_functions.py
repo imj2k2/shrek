@@ -92,7 +92,12 @@ def run_backtest(symbols, start_date, end_date, initial_capital, strategy_type):
                 if 'total_trades' in perf:
                     results_text += f"Total Trades: {perf.get('total_trades', 0)}\n"
                 if 'profit_factor' in perf:
-                    results_text += f"Profit Factor: {perf.get('profit_factor', 0):.2f}\n"
+                    # Add profit factor with type checking
+                    profit_factor = perf.get('profit_factor', 0)
+                    if isinstance(profit_factor, (int, float)):
+                        results_text += f"Profit Factor: {profit_factor:.2f}\n"
+                    else:
+                        results_text += f"Profit Factor: {profit_factor}\n"
             elif "performance" in result:
                 perf = result["performance"]
                 results_text += f"Final Portfolio Value: ${perf.get('final_value', 0):,.2f}\n"

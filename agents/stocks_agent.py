@@ -415,44 +415,26 @@ class StocksAgent:
                 macd_line = ema_fast - ema_slow
                 signal_line = macd_line.ewm(span=params["macd_signal"], adjust=False).mean()
                 
-                # Get the latest values - handle both pandas Series and NumPy arrays
-                if isinstance(macd_line, pd.Series):
-                    latest_macd = safe_idx(macd_line, -1)
-                elif isinstance(macd_line, np.ndarray) and len(macd_line) > 0:
-                    latest_macd = macd_line[-1]
-                else:
-                    latest_macd = None
+                # Convert to pandas Series if needed
+                if isinstance(macd_line, np.ndarray):
+                    macd_line = pd.Series(macd_line)
+                if isinstance(signal_line, np.ndarray):
+                    signal_line = pd.Series(signal_line)
+                
+                # Get latest values
+                latest_macd = safe_idx(macd_line, -1) if len(macd_line) > 0 else None
+                latest_signal = safe_idx(signal_line, -1) if len(signal_line) > 0 else None
+                
+                if latest_macd is not None and latest_signal is not None and len(macd_line) > 1 and len(signal_line) > 1:
+                    # Get previous values
+                    prev_macd = safe_idx(macd_line, -2)
+                    prev_signal = safe_idx(signal_line, -2)
                     
-                if isinstance(signal_line, pd.Series):
-                    latest_signal = safe_idx(signal_line, -1)
-                elif isinstance(signal_line, np.ndarray) and len(signal_line) > 0:
-                    latest_signal = signal_line[-1]
-                else:
-                    latest_signal = None
-            
-                if latest_macd is not None and latest_signal is not None:
+                    # Calculate distance between MACD and signal line
+                    macd_distance = abs(latest_macd - latest_signal)
+                    norm_distance = macd_distance / abs(latest_signal) if latest_signal != 0 else 0
+                    
                     # MACD crosses above signal line (potential buy)
-                    if len(macd_line) > 1 and len(signal_line) > 1:
-                        # Handle both pandas Series and NumPy arrays for previous values
-                        if isinstance(macd_line, pd.Series):
-                            prev_macd = safe_idx(macd_line, -2)
-                        elif isinstance(macd_line, np.ndarray):
-                            prev_macd = macd_line[-2]
-                        else:
-                            prev_macd = None
-                            
-                        if isinstance(signal_line, pd.Series):
-                            prev_signal = safe_idx(signal_line, -2)
-                        elif isinstance(signal_line, np.ndarray):
-                            prev_signal = signal_line[-2]
-                        else:
-                            prev_signal = None
-                        
-                        # Calculate distance between MACD and signal line
-                        macd_distance = abs(latest_macd - latest_signal)
-                        norm_distance = macd_distance / abs(latest_signal) if latest_signal != 0 else 0
-                    
-                    # MACD crosses above signal line (potential buy) - actual crossover only
                     if prev_macd < prev_signal and latest_macd > latest_signal:
                         # Strength based on the size of the crossover movement
                         signals["macd_cross_above"] = {
@@ -461,7 +443,7 @@ class StocksAgent:
                             "reason": "MACD crossed above signal line",
                             "strategy": "momentum"
                         }
-                    # MACD crosses below signal line (potential sell) - actual crossover only
+                    # MACD crosses below signal line (potential sell)
                     elif prev_macd > prev_signal and latest_macd < latest_signal:
                         # Strength based on the size of the crossover movement
                         signals["macd_cross_below"] = {
@@ -470,7 +452,7 @@ class StocksAgent:
                             "reason": "MACD crossed below signal line",
                             "strategy": "momentum"
                         }
-                        
+                    
                     # MACD is positive and increasing (bullish momentum)
                     if latest_macd > 0 and len(macd_line) > 5 and latest_macd > safe_idx(macd_line, -5):
                         signals["macd_bullish"] = {
@@ -479,7 +461,7 @@ class StocksAgent:
                             "reason": "MACD is positive and increasing",
                             "strategy": "momentum"
                         }
-                        
+                    
                     # MACD is negative and decreasing (bearish momentum)
                     elif latest_macd < 0 and len(macd_line) > 5 and latest_macd < safe_idx(macd_line, -5):
                         signals["macd_bearish"] = {
@@ -490,6 +472,20 @@ class StocksAgent:
                         }
         except Exception as e:
             self.logger.warning(f"MACD calculation failed: {str(e)}")
+            
+        # Bollinger Bands Strategy (separate from MACD)
+        try:
+            if len(close) >= params.get("bollinger_period", 20):
+                # Calculate SMA for middle band
+                middle = close.rolling(window=params.get("bollinger_period", 20)).mean()
+                
+                # Calculate standard deviation
+                stddev = close.rolling(window=params.get("bollinger_period", 20)).std()
+                
+                # Add Bollinger Bands signals if needed
+                # (Implemented separately from MACD)
+        except Exception as e:
+            self.logger.warning(f"Bollinger Bands calculation failed: {str(e)}")
         
         
         return signals
@@ -847,8 +843,16 @@ class StocksAgent:
         
         # Example: If we're buying, calculate position size based on risk
         if signals['action'] == 'buy':
-            # Get price and calculate quantity
-            price = data['close'][-1] if isinstance(data['close'], list) else data['close'].iloc[-1]
+            # Get price and calculate quantity in a type-safe manner
+            if isinstance(data['close'], list) or isinstance(data['close'], np.ndarray):
+                # Handle list or numpy array
+                price = data['close'][-1]
+            elif isinstance(data['close'], pd.Series):
+                # Handle pandas Series
+                price = data['close'].iloc[-1] if not data['close'].empty else 0
+            else:
+                # Handle scalar or other types
+                price = data['close']
             
             # Mock portfolio value (in production, get from broker)
             portfolio_value = 100000  # $100k portfolio
@@ -884,7 +888,16 @@ class StocksAgent:
         # For now, just use a fixed percentage
         elif signals['action'] == 'sell':
             signals['qty'] = 10  # Mock quantity
-            signals['price'] = data['close'][-1] if isinstance(data['close'], list) else data['close'].iloc[-1]
+            # Get price in a type-safe manner
+            if isinstance(data['close'], list) or isinstance(data['close'], np.ndarray):
+                # Handle list or numpy array
+                signals['price'] = data['close'][-1]
+            elif isinstance(data['close'], pd.Series):
+                # Handle pandas Series
+                signals['price'] = data['close'].iloc[-1] if not data['close'].empty else 0
+            else:
+                # Handle scalar or other types
+                signals['price'] = data['close']
         
         return signals
     

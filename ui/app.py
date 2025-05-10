@@ -16,6 +16,13 @@ sys.path.append('/app')
 # Import data modules
 from data.startup import initialize as initialize_data
 
+# Import backtest patch to fix market_value errors
+try:
+    from backtest.backtest_patch import apply_patches
+    logging.info("Imported backtest patch module successfully")
+except ImportError as e:
+    logging.error(f"Could not import backtest patch: {str(e)}")
+
 app = FastAPI()
 
 # Allow CORS for Gradio frontend
@@ -44,6 +51,14 @@ try:
 except Exception as e:
     logging.error(f"Error initializing data components: {str(e)}")
     # Continue even if initialization fails
+
+# Apply backtesting patches
+try:
+    apply_patches()
+    logging.info("Successfully applied backtesting patches")
+except Exception as e:
+    logging.error(f"Error applying backtesting patches: {str(e)}")
+    # Continue even if patching fails
 
 @app.get("/ping")
 def ping():

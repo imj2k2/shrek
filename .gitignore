@@ -48,3 +48,4 @@ data/db/
 *.tmp
 .DS_Store
 test/*
+s3_test.py

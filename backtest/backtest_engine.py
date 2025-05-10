@@ -730,9 +730,24 @@ class Backtester:
                             self.logger.error(f"No price data found for {symbol} on {date}")
                             continue
                             
+                    # Update current price
                     position['current_price'] = current_price
-                    position['market_value'] = position['quantity'] * current_price
-                    position['profit_loss'] = position['market_value'] - position['cost_basis']
+                    
+                    # Safely calculate market value if quantity exists
+                    if 'quantity' in position:
+                        position['market_value'] = position['quantity'] * current_price
+                    else:
+                        # Initialize quantity with 0 if missing
+                        position['quantity'] = 0
+                        position['market_value'] = 0
+                    
+                    # Safely calculate profit/loss if cost basis exists
+                    if 'cost_basis' in position:
+                        position['profit_loss'] = position['market_value'] - position['cost_basis']
+                    else:
+                        # Initialize cost_basis with 0 if missing
+                        position['cost_basis'] = 0
+                        position['profit_loss'] = 0
                 except Exception as e:
                     self.logger.error(f"Error updating prices for {symbol}: {str(e)}")
                     self.logger.error(f"Available columns: {data[symbol].columns.tolist()}")
@@ -934,7 +949,16 @@ class Backtester:
         equity = portfolio['cash']
         
         for symbol, position in portfolio['positions'].items():
-            equity += position['market_value']
+            # Handle missing market_value gracefully
+            if 'market_value' in position:
+                equity += position['market_value']
+            elif 'quantity' in position and 'current_price' in position:
+                # Calculate market value if we have quantity and price
+                market_value = position['quantity'] * position['current_price']
+                position['market_value'] = market_value  # Set it for future reference
+                equity += market_value
+            else:
+                self.logger.warning(f"Position for {symbol} missing data for market value calculation")
         
         return equity
     
