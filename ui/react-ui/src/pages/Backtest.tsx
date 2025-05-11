@@ -31,6 +31,7 @@ const Backtest: React.FC = () => {
   
   // State for backtest results
   const [backtestId, setBacktestId] = useState<string | null>(null);
+  const [results, setResults] = useState<any>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [usingMockData, setUsingMockData] = useState(false);
   
@@ -68,11 +69,26 @@ const Backtest: React.FC = () => {
     },
     {
       onSuccess: (data) => {
-        setBacktestId(data.backtestId);
+        console.log('Backtest API response:', data); // Debug log
         setIsRunning(false);
         
-        // Check if mock data was used
-        if (data.results && data.results.data_source === 'mock') {
+        // Check if we got error from the API
+        if (data.error) {
+          toast({
+            title: 'Backtest Error',
+            description: data.error,
+            status: 'error',
+            duration: 5000,
+            isClosable: true,
+          });
+          return;
+        }
+        
+        // Store the result directly
+        setResults(data);
+        
+        // Check for mock data usage
+        if (data.data_sources && Object.values(data.data_sources).some(source => source === 'mock')) {
           setUsingMockData(true);
           toast({
             title: 'Backtest completed with mock data',
@@ -104,15 +120,9 @@ const Backtest: React.FC = () => {
     }
   );
   
-  // Get backtest results
-  const { data: results, isLoading: resultsLoading } = useQuery(
-    ['backtestResults', backtestId],
-    () => getBacktestResults(backtestId!),
-    {
-      enabled: !!backtestId,
-      refetchInterval: isRunning ? 2000 : false,
-    }
-  );
+  // Note: We're now using the 'results' state directly from the runBacktest mutation
+  // Previously, we were using a separate query but this caused naming conflicts
+  const resultsLoading = isRunning;
   
   // Handle adding a symbol
   const addSymbol = () => {
