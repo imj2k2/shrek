@@ -8,7 +8,8 @@ import {
 } from '@chakra-ui/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { runBacktest, getBacktestResults } from '../services/api';
-import { FiX, FiInfo } from 'react-icons/fi';
+import { FiX, FiInfo, FiPlus } from 'react-icons/fi';
+import TearSheet from '../components/TearSheet';
 
 const Backtest: React.FC = () => {
   const toast = useToast();
@@ -348,7 +349,7 @@ const Backtest: React.FC = () => {
             <Tabs isLazy>
               <TabList>
                 <Tab>Summary</Tab>
-                <Tab>Performance</Tab>
+                <Tab>Advanced Analytics</Tab>
                 <Tab>Trades</Tab>
                 <Tab>Charts</Tab>
               </TabList>
@@ -427,9 +428,18 @@ const Backtest: React.FC = () => {
                   </Grid>
                 </TabPanel>
                 
-                {/* Performance Tab */}
+                {/* Advanced Analytics Tab */}
                 <TabPanel>
-                  <Text>Performance metrics will be displayed here</Text>
+                  {results?.quantstats?.backtest_id ? (
+                    <TearSheet backtestId={results.quantstats.backtest_id} />
+                  ) : (
+                    <Box textAlign="center" p={6}>
+                      <Text>Advanced analytics are available after successful backtest completion.</Text>
+                      <Text fontSize="sm" color="gray.500" mt={2}>
+                        Note: Requires sufficient trade history to generate meaningful metrics.
+                      </Text>
+                    </Box>
+                  )}
                 </TabPanel>
                 
                 {/* Trades Tab */}

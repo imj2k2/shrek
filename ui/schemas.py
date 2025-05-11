@@ -277,6 +277,35 @@ def run_backtest(request: BacktestRequest):
                 "agent_criteria": agent_criteria
             }
             
+            # Generate a unique backtest ID if not already provided
+            backtest_id = request.strategy_id or f"{strategy_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            result_dict["backtest_id"] = backtest_id
+            
+            # Process results with QuantStats for enhanced analytics
+            try:
+                from backtest.quantstats_integration import QuantStatsAnalyzer
+                quantstats_analyzer = QuantStatsAnalyzer()
+                
+                # Process backtest results
+                quantstats_result = quantstats_analyzer.process_backtest_results(
+                    backtest_id=backtest_id,
+                    equity_curve=result_dict["equity_curve"],
+                    benchmark_data=result.benchmark_data if hasattr(result, 'benchmark_data') else None
+                )
+                
+                # Add QuantStats results to the response
+                result_dict["quantstats"] = {
+                    "backtest_id": backtest_id,
+                    "metrics_endpoint": f"/quantstats/metrics/{backtest_id}",
+                    "returns_endpoint": f"/quantstats/returns/{backtest_id}",
+                    "html_endpoint": f"/quantstats/html/{backtest_id}"
+                }
+                
+                logging.info(f"QuantStats analysis completed for backtest {backtest_id}")
+            except Exception as e:
+                logging.error(f"QuantStats processing error: {str(e)}")
+                # Continue anyway, as this is an enhancement, not critical functionality
+            
             if not result_dict:
                 logging.error("Backtest returned no results")
                 return {"error": "Backtest returned no results", "status": "failed"}
